@@ -3,6 +3,7 @@
 //! ones on cash registers or something
 
 #![no_std]
+#![warn(missing_docs)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -10,15 +11,18 @@ extern crate alloc;
 pub mod backend;
 pub mod ui;
 
+/// Screen Coordinates on the display.
 #[derive(Clone, Copy, Debug)]
 pub struct ScreenCoordinates {
-    /// also the Y coordinate.
+    /// The Y coordinate.
     row: u8,
-    /// also the X coordinate.
+    /// The X coordinate.
     col: u8,
 }
 
 impl ScreenCoordinates {
+    /// Helper function for creating a `ScreenCoordinates` to avoid confusion between `row` and `col` and `y` and `x`.
+    /// (I get confused a lot, even while writing the above line)
     pub fn at(x: u8, y: u8) -> Self {
         ScreenCoordinates { row: y, col: x }
     }

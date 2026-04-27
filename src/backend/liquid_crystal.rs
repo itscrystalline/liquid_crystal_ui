@@ -1,3 +1,9 @@
+//! Provides a sync and async implementation of [`crate::backend::LcdBackend`]
+//! and [`crate::backend::AsyncLcdBackend`] for the [`liquid_crystal::LiquidCrystal`]
+//! screen driver.
+//!
+//! You can also use this module as a reference for implementing the backend traits on your own drivers.
+
 use core::convert::Infallible;
 
 pub use embedded_hal::delay::DelayNs as Delay;
@@ -17,7 +23,7 @@ impl<T: liquid_crystal::Interface, const COLS: u8, const LINES: usize> LcdBacken
     /// The driver doesn't return errors, so no errors can happen in the driver
     type Error = Infallible;
 
-    fn init_driver(&mut self, delay: &mut impl Delay) -> Result<&mut Self, Self::Error> {
+    fn prepare_screen(&mut self, delay: &mut impl Delay) -> Result<&mut Self, Self::Error> {
         self.begin(delay);
         self.disable_autoscroll()
             .disable_cursor()
@@ -92,7 +98,7 @@ impl<T: liquid_crystal::Interface, const COLS: u8, const LINES: usize> AsyncLcdB
     /// The driver doesn't return errors, so no errors can happen in the driver
     type Error = Infallible;
 
-    async fn init_driver(&mut self, delay: &mut impl ADelay) -> Result<&mut Self, Self::Error> {
+    async fn prepare_screen(&mut self, delay: &mut impl ADelay) -> Result<&mut Self, Self::Error> {
         self.begin(delay).await;
         self.disable_autoscroll()
             .disable_cursor()
