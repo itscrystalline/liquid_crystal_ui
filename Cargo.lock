@@ -18,11 +18,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "liquid_crystal"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d8b66e0794bc41fc20f70a92e9a9a69ff0e4f411db40dcd1002913e585a031e9"
+dependencies = [
+ "embedded-hal",
+ "embedded-hal-async",
+]
+
+[[package]]
 name = "liquid_crystal_ui"
 version = "0.1.0"
 dependencies = [
  "embedded-hal",
  "embedded-hal-async",
+ "liquid_crystal",
  "log",
 ]
 

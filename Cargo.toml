@@ -13,12 +13,14 @@ categories = ["embedded", "no-std"]
 [dependencies]
 embedded-hal = "1.0"
 embedded-hal-async = { version = "1.0", optional = true }
+liquid_crystal = { version = "0.2.0", optional = true }
 log = { version = "0.4.29", optional = true }
 
 [features]
-default = ["async", "log", "alloc"] # dont forget to remove this vro
+default = ["async", "log", "alloc", "liquid_crystal_driver"] # dont forget to remove this vro
 
-async = ["dep:embedded-hal-async"]
-log = ["dep:log"]
+async = ["dep:embedded-hal-async", "liquid_crystal?/async"]
 alloc = []
+log = ["dep:log"]
+liquid_crystal_driver = ["dep:liquid_crystal"]
 

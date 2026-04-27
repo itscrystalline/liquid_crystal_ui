@@ -7,6 +7,13 @@
 
 use crate::ScreenCoordinates;
 
+#[cfg(feature = "liquid_crystal_driver")]
+pub mod liquid_crystal;
+
+pub use embedded_hal::delay::DelayNs as Delay;
+#[cfg(feature = "async")]
+pub use embedded_hal_async::delay::DelayNs as ADelay;
+
 #[cfg(feature = "async")]
 #[allow(async_fn_in_trait)]
 pub trait AsyncLcdBackend<const CHAR_HEIGHT: usize> {

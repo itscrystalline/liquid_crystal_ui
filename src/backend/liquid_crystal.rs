@@ -1,0 +1,165 @@
+use core::convert::Infallible;
+
+pub use embedded_hal::delay::DelayNs as Delay;
+#[cfg(feature = "async")]
+pub use embedded_hal_async::delay::DelayNs as ADelay;
+
+use liquid_crystal::{Command, Commands::Clear, LiquidCrystal, SendType::CustomChar};
+
+#[cfg(feature = "async")]
+use crate::backend::AsyncLcdBackend;
+use crate::backend::LcdBackend;
+
+impl<T: liquid_crystal::Interface, const COLS: u8, const LINES: usize> LcdBackend<8>
+    for LiquidCrystal<'_, T, COLS, LINES, liquid_crystal::Blocking>
+{
+    const CUSTOM_CHARACTER_SLOTS: u8 = 8;
+    /// The driver doesn't return errors, so no errors can happen in the driver
+    type Error = Infallible;
+
+    fn init_driver(&mut self, delay: &mut impl Delay) -> Result<&mut Self, Self::Error> {
+        self.begin(delay);
+        self.disable_autoscroll()
+            .disable_cursor()
+            .update_config(delay);
+        Ok(self)
+    }
+
+    fn clear(&mut self, delay: &mut impl Delay) -> Result<&mut Self, Self::Error> {
+        self.write(delay, Command(Clear));
+        Ok(self)
+    }
+
+    fn move_cursor(
+        &mut self,
+        delay: &mut impl Delay,
+        pos: crate::ScreenCoordinates,
+    ) -> Result<&mut Self, Self::Error> {
+        let y = (pos.row as usize).clamp(0, LINES);
+        let x = pos.col.clamp(0, COLS);
+        #[cfg(feature = "log")]
+        {
+            if y != pos.row as usize {
+                log::warn!("Y coordinate {y} is larger than the screen size of {LINES}!");
+            }
+            if x != pos.col {
+                log::warn!("X coordinate {x} is larger than the screen size of {COLS}!");
+            }
+        }
+        self.set_cursor(delay, y, x);
+        Ok(self)
+    }
+
+    fn write_byte(&mut self, delay: &mut impl Delay, byte: u8) -> Result<&mut Self, Self::Error> {
+        self.send(delay, byte, 0x01);
+        Ok(self)
+    }
+
+    fn set_custom_character_at(
+        &mut self,
+        delay: &mut impl Delay,
+        at: u8,
+        character: [u8; 8],
+    ) -> Result<&mut Self, Self::Error> {
+        #[cfg(feature = "log")]
+        if at >= Self::CUSTOM_CHARACTER_SLOTS {
+            log::error!(
+                "character index {at} is more than the supported character count of this display!"
+            );
+        }
+
+        if at < Self::CUSTOM_CHARACTER_SLOTS {
+            self.custom_char(delay, &character, at);
+        }
+        Ok(self)
+    }
+
+    fn write_custom_character(
+        &mut self,
+        delay: &mut impl Delay,
+        char_idx: u8,
+    ) -> Result<&mut Self, Self::Error> {
+        self.write(delay, CustomChar(char_idx));
+        Ok(self)
+    }
+}
+
+#[cfg(feature = "async")]
+impl<T: liquid_crystal::Interface, const COLS: u8, const LINES: usize> AsyncLcdBackend<8>
+    for LiquidCrystal<'_, T, COLS, LINES, liquid_crystal::Async>
+{
+    const CUSTOM_CHARACTER_SLOTS: u8 = 8;
+    /// The driver doesn't return errors, so no errors can happen in the driver
+    type Error = Infallible;
+
+    async fn init_driver(&mut self, delay: &mut impl ADelay) -> Result<&mut Self, Self::Error> {
+        self.begin(delay).await;
+        self.disable_autoscroll()
+            .disable_cursor()
+            .update_config(delay)
+            .await;
+        Ok(self)
+    }
+
+    async fn clear(&mut self, delay: &mut impl ADelay) -> Result<&mut Self, Self::Error> {
+        self.write(delay, Command(Clear)).await;
+        Ok(self)
+    }
+
+    async fn move_cursor(
+        &mut self,
+        delay: &mut impl ADelay,
+        pos: crate::ScreenCoordinates,
+    ) -> Result<&mut Self, Self::Error> {
+        let y = (pos.row as usize).clamp(0, LINES);
+        let x = pos.col.clamp(0, COLS);
+        #[cfg(feature = "log")]
+        {
+            if y != pos.row as usize {
+                log::warn!("Y coordinate {y} is larger than the screen size of {LINES}!");
+            }
+            if x != pos.col {
+                log::warn!("X coordinate {x} is larger than the screen size of {COLS}!");
+            }
+        }
+        self.set_cursor(delay, y, x).await;
+        Ok(self)
+    }
+
+    async fn write_byte(
+        &mut self,
+        delay: &mut impl ADelay,
+        byte: u8,
+    ) -> Result<&mut Self, Self::Error> {
+        self.send(delay, byte, 0x01).await;
+        Ok(self)
+    }
+
+    async fn set_custom_character_at(
+        &mut self,
+        delay: &mut impl ADelay,
+        at: u8,
+        character: [u8; 8],
+    ) -> Result<&mut Self, Self::Error> {
+        #[cfg(feature = "log")]
+        if at >= Self::CUSTOM_CHARACTER_SLOTS {
+            log::error!(
+                "character index {at} is more than the supported character count of this display!"
+            );
+        }
+
+        if at < Self::CUSTOM_CHARACTER_SLOTS {
+            self.custom_char(delay, &character, at).await;
+        }
+        Ok(self)
+    }
+
+    async fn write_custom_character(
+        &mut self,
+        delay: &mut impl ADelay,
+        char_idx: u8,
+    ) -> Result<&mut Self, Self::Error> {
+        self.write(delay, CustomChar(char_idx)).await;
+        Ok(self)
+    }
+}
