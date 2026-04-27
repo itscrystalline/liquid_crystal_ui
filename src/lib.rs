@@ -10,14 +10,17 @@ extern crate alloc;
 pub mod backend;
 pub mod ui;
 
+#[derive(Clone, Copy, Debug)]
 pub struct ScreenCoordinates {
+    /// also the Y coordinate.
     row: u8,
+    /// also the X coordinate.
     col: u8,
 }
 
 impl ScreenCoordinates {
     pub fn at(x: u8, y: u8) -> Self {
-        ScreenCoordinates { row: x, col: y }
+        ScreenCoordinates { row: y, col: x }
     }
 }
 impl From<(u8, u8)> for ScreenCoordinates {
