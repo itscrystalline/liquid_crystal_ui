@@ -1,0 +1,22 @@
+[package]
+name = "liquid_crystal_ui"
+version = "0.1.0"
+edition = "2024"
+authors = ["itscrystalline <real@iw2tryhard.dev>"]
+description = "An embedded UI library for displaying to alphanumeric LCD displays."
+license = "MIT"
+repository = "https://github.com/RecursiveError/liquid_crystal"
+keywords = ["lcd", "liquidcrystal", "HD44780", "embedded-hal", "tui"]
+categories = ["embedded", "no-std"]
+
+
+[dependencies]
+embedded-hal = "1.0"
+embedded-hal-async = { version = "1.0", optional = true }
+log = { version = "0.4.29", optional = true }
+
+[features]
+async = ["dep:embedded-hal-async"]
+log = ["dep:log"]
+alloc = []
+
