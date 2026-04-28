@@ -14,16 +14,19 @@ categories = ["embedded", "no-std"]
 embassy-time = "0.5.1"
 embedded-hal = "1.0"
 embedded-hal-async = { version = "1.0", optional = true }
-heapless = "0.9.2"
+heapless = { version = "0.9.2", optional = true }
 liquid_crystal = { version = "0.2.0", optional = true }
 log = { version = "0.4.29", optional = true }
+num-traits = { version = "0.2.19", default-features = false }
+thiserror = { version = "2.0.18", default-features = false }
 
 [features]
-# default = ["async", "log", "liquid_crystal_driver"] # dont forget to remove this vro
+# default = ["async", "log", "heapless", "liquid_crystal_driver"] # dont forget to remove this vro
 default = ["async", "log", "alloc", "liquid_crystal_driver"] # dont forget to remove this vro
 
 async = ["dep:embedded-hal-async", "liquid_crystal?/async"]
 alloc = []
+heapless = ["dep:heapless"]
 log = ["dep:log"]
 liquid_crystal_driver = ["dep:liquid_crystal"]
 

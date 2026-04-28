@@ -11,13 +11,16 @@ extern crate alloc;
 pub mod backend;
 pub mod ui;
 
+pub mod error;
+pub mod storage;
+
 /// Blocking (Sync) mode.
 pub struct Blocking;
 /// Asynchronous mode.
 pub struct Async;
 
 /// Screen Coordinates on the display.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ScreenCoordinates {
     /// The Y coordinate.
     row: u8,
@@ -30,6 +33,23 @@ impl ScreenCoordinates {
     /// (I get confused a lot, even while writing the above line)
     pub const fn at(x: u8, y: u8) -> Self {
         ScreenCoordinates { row: y, col: x }
+    }
+
+    /// The X coordinate (column).
+    pub const fn x(&self) -> u8 {
+        self.col
+    }
+    /// The Y coordinate (row).
+    pub const fn y(&self) -> u8 {
+        self.row
+    }
+    /// The column (X coordinate).
+    pub const fn col(&self) -> u8 {
+        self.col
+    }
+    /// The row (Y coordinate).
+    pub const fn row(&self) -> u8 {
+        self.row
     }
 }
 impl From<(u8, u8)> for ScreenCoordinates {
