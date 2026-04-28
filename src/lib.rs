@@ -11,6 +11,11 @@ extern crate alloc;
 pub mod backend;
 pub mod ui;
 
+/// Blocking (Sync) mode.
+pub struct Blocking;
+/// Asynchronous mode.
+pub struct Async;
+
 /// Screen Coordinates on the display.
 #[derive(Clone, Copy, Debug)]
 pub struct ScreenCoordinates {
@@ -23,7 +28,7 @@ pub struct ScreenCoordinates {
 impl ScreenCoordinates {
     /// Helper function for creating a `ScreenCoordinates` to avoid confusion between `row` and `col` and `y` and `x`.
     /// (I get confused a lot, even while writing the above line)
-    pub fn at(x: u8, y: u8) -> Self {
+    pub const fn at(x: u8, y: u8) -> Self {
         ScreenCoordinates { row: y, col: x }
     }
 }
