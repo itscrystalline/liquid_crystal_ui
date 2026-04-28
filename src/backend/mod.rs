@@ -6,6 +6,7 @@
 //! TBA
 
 use crate::ScreenCoordinates;
+use crate::storage::TextContainer;
 
 #[cfg(feature = "liquid_crystal_driver")]
 pub mod liquid_crystal;
@@ -17,7 +18,12 @@ pub use embedded_hal_async::delay::DelayNs as ADelay;
 #[cfg(feature = "async")]
 #[allow(async_fn_in_trait)]
 /// The Asynchronous Backend trait for `async` drivers.
-pub trait AsyncLcdBackend<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS: usize> {
+pub trait AsyncLcdBackend<
+    const CHAR_HEIGHT: usize,
+    const CUSTOM_CHARACTER_SLOTS: usize,
+    S: TextContainer,
+>
+{
     /// The error type that is emitted by the driver. If the driver doesn't fail, you can use
     /// [`core::convert::Infallible`] or the `!` (never) type.
     type Error;
@@ -58,17 +64,22 @@ pub trait AsyncLcdBackend<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS
     async fn write_str(
         &mut self,
         delay: &mut impl ADelay,
-        s: &str,
+        s: &S,
     ) -> Result<&mut Self, Self::Error> {
         for ch in s.chars() {
-            self.write_byte(delay, ch as u8).await?;
+            self.write_byte(delay, ch).await?;
         }
         Ok(self)
     }
 }
 
 /// The Synchronous Backend trait for blocking drivers.
-pub trait LcdBackend<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS: usize> {
+pub trait LcdBackend<
+    const CHAR_HEIGHT: usize,
+    const CUSTOM_CHARACTER_SLOTS: usize,
+    S: TextContainer,
+>
+{
     /// The error type that is emitted by the driver. If the driver doesn't fail, you can use
     /// [`core::convert::Infallible`] or the `!` (never) type.
     type Error;
@@ -102,9 +113,9 @@ pub trait LcdBackend<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS: usi
     ) -> Result<&mut Self, Self::Error>;
 
     /// Writes a string of ASCII characters to the screen.
-    fn write_str(&mut self, delay: &mut impl Delay, s: &str) -> Result<&mut Self, Self::Error> {
+    fn write_str(&mut self, delay: &mut impl Delay, s: &S) -> Result<&mut Self, Self::Error> {
         for ch in s.chars() {
-            self.write_byte(delay, ch as u8)?;
+            self.write_byte(delay, ch)?;
         }
         Ok(self)
     }

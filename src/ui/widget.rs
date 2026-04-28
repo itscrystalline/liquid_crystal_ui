@@ -1,18 +1,17 @@
 //! On-screen widgets.
 
-use alloc::{
-    collections::VecDeque,
-    string::{String, ToString},
+use crate::{
+    ScreenCoordinates,
+    storage::{QueueContainer, TextContainer},
+    ui::transition::Transition,
 };
 
-use crate::{ScreenCoordinates, ui::transition::Transition};
-
 #[derive(Debug)]
-pub(crate) struct ScreenElement {
-    pub(crate) content: ScreenContent,
+pub(crate) struct ScreenElement<S: TextContainer, Q: QueueContainer<Transition<S>>> {
+    pub(crate) content: ScreenContent<S>,
     pub(crate) pos: ScreenCoordinates,
     pub(crate) hidden: bool,
-    pub(crate) transitions: VecDeque<Transition>,
+    pub(crate) transitions: Q,
     pub(crate) transition_progress: Option<u8>,
 }
 
@@ -22,17 +21,16 @@ pub struct CustomCharacterRef(pub(crate) u32, pub(crate) usize);
 
 #[derive(Debug)]
 /// What a widget will display.
-pub enum ScreenContent {
+pub enum ScreenContent<S: TextContainer> {
     /// ASCII / Extended ASCII string.
-    Text(String),
+    Text(S),
     /// A defined custom character.
     CustomCharacter(CustomCharacterRef),
 }
 
-impl ScreenContent {
+impl<S: TextContainer> ScreenContent<S> {
     /// Shorthand for creating a [`ScreenContent::Text`] from an `&str`.
-    #[cfg(feature = "alloc")]
-    pub fn text(c: &str) -> Self {
-        ScreenContent::Text(c.to_string())
+    pub fn text(c: &str) -> Result<Self, S::Error> {
+        Ok(ScreenContent::Text(S::from_str(c)?))
     }
 }

@@ -10,16 +10,14 @@ pub use embedded_hal::delay::DelayNs as Delay;
 #[cfg(feature = "async")]
 pub use embedded_hal_async::delay::DelayNs as ADelay;
 
-#[cfg(feature = "async")]
-use liquid_crystal::SendType::Text;
 use liquid_crystal::{Command, Commands::Clear, LiquidCrystal, SendType::CustomChar};
 
 #[cfg(feature = "async")]
 use crate::backend::AsyncLcdBackend;
-use crate::backend::LcdBackend;
+use crate::{backend::LcdBackend, storage::TextContainer};
 
-impl<T: liquid_crystal::Interface, const COLS: u8, const LINES: usize> LcdBackend<8, 8>
-    for LiquidCrystal<'_, T, COLS, LINES, liquid_crystal::Blocking>
+impl<T: liquid_crystal::Interface, S: TextContainer, const COLS: u8, const LINES: usize>
+    LcdBackend<8, 8, S> for LiquidCrystal<'_, T, COLS, LINES, liquid_crystal::Blocking>
 {
     /// The driver doesn't return errors, so no errors can happen in the driver
     type Error = Infallible;
@@ -89,16 +87,11 @@ impl<T: liquid_crystal::Interface, const COLS: u8, const LINES: usize> LcdBacken
         self.write(delay, CustomChar(char_idx));
         Ok(self)
     }
-
-    fn write_str(&mut self, delay: &mut impl Delay, s: &str) -> Result<&mut Self, Self::Error> {
-        self.write(delay, Text(s));
-        Ok(self)
-    }
 }
 
 #[cfg(feature = "async")]
-impl<T: liquid_crystal::Interface, const COLS: u8, const LINES: usize> AsyncLcdBackend<8, 8>
-    for LiquidCrystal<'_, T, COLS, LINES, liquid_crystal::Async>
+impl<T: liquid_crystal::Interface, S: TextContainer, const COLS: u8, const LINES: usize>
+    AsyncLcdBackend<8, 8, S> for LiquidCrystal<'_, T, COLS, LINES, liquid_crystal::Async>
 {
     /// The driver doesn't return errors, so no errors can happen in the driver
     type Error = Infallible;
@@ -171,15 +164,6 @@ impl<T: liquid_crystal::Interface, const COLS: u8, const LINES: usize> AsyncLcdB
         char_idx: u8,
     ) -> Result<&mut Self, Self::Error> {
         self.write(delay, CustomChar(char_idx)).await;
-        Ok(self)
-    }
-
-    async fn write_str(
-        &mut self,
-        delay: &mut impl ADelay,
-        s: &str,
-    ) -> Result<&mut Self, Self::Error> {
-        self.write(delay, Text(s)).await;
         Ok(self)
     }
 }

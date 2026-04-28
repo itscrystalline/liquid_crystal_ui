@@ -1,11 +1,7 @@
 //! Storage adapter.
 
 /// Trait abstracting ASCII text containers (strings).
-pub trait StorableText: StackContainer {
-    /// The length of text in ASCII characters.
-    fn len(&self) -> usize {
-        StackContainer::len(self)
-    }
+pub trait TextContainer: StackContainer<u8> {
     /// If the string is empty.
     fn is_empty(&self) -> bool {
         StackContainer::is_empty(self)
@@ -21,15 +17,21 @@ pub trait StorableText: StackContainer {
     }
     /// Iterator for the ASCII characters in the string.
     fn chars(&self) -> impl Iterator<Item = u8>;
+
+    /// Converts an `&str` to a TextContainer.
+    fn from_str(s: &str) -> Result<Self, Self::Error> {
+        let mut new = Self::new();
+        new.push_ascii_iter(s.bytes())?;
+        Ok(new)
+    }
 }
 /// Trait abstracting queues.
-pub trait QueueContainer: IntoIterator<Item = Self::Content> {
-    /// What this queue is storing.
-    // duh, im lowk getting tired of doccing all ts
-    type Content;
+pub trait QueueContainer<C>: IntoIterator<Item = C> + Sized {
     /// The error type this container may emit.
     type Error;
 
+    /// Creates an empty container.
+    fn new() -> Self;
     /// The length of the queue.
     fn len(&self) -> usize;
     /// If the queue is empty.
@@ -37,16 +39,18 @@ pub trait QueueContainer: IntoIterator<Item = Self::Content> {
         self.len() == 0
     }
     /// Enqueues an element onto the end of this queue.
-    fn enqueue(&mut self, elem: Self::Content) -> Result<(), Self::Error>;
+    fn enqueue(&mut self, elem: C) -> Result<(), Self::Error>;
     /// Dequeues an element off the front of this queue if there are things in the queue, returning it.
-    fn dequeue(&mut self) -> Option<Self::Content>;
+    fn dequeue(&mut self) -> Option<C>;
     /// Inspects the front of the queue, without dequeueing it.
-    fn peek(&self) -> Option<&Self::Content>;
+    fn peek(&self) -> Option<&C>;
+    /// Mutable ref to the front of the queue, without dequeueing it.
+    fn peek_mut(&mut self) -> Option<&mut C>;
 
     /// Enqueues elements in an iterator onto the end of this queue.
     fn enqueue_iter(
         &mut self,
-        elems: impl IntoIterator<Item = Self::Content>,
+        elems: impl IntoIterator<Item = C>,
     ) -> Result<(), (Self::Error, usize)> {
         for (idx, elem) in elems.into_iter().enumerate() {
             self.enqueue(elem).map_err(|e| (e, idx))?
@@ -55,12 +59,12 @@ pub trait QueueContainer: IntoIterator<Item = Self::Content> {
     }
 }
 /// Trait abstracting `Vec`. idk vro
-pub trait StackContainer: IntoIterator<Item = Self::Content> {
-    /// What this stack is storing.
-    type Content;
+pub trait StackContainer<C>: IntoIterator<Item = C> + Sized {
     /// The error type this satck may emit.
     type Error;
 
+    /// Creates an empty container.
+    fn new() -> Self;
     /// The length of the stack.
     fn len(&self) -> usize;
     /// If the stack is empty.
@@ -68,16 +72,16 @@ pub trait StackContainer: IntoIterator<Item = Self::Content> {
         self.len() == 0
     }
     /// Pushes an element onto this stack.
-    fn push(&mut self, elem: Self::Content) -> Result<(), Self::Error>;
+    fn push(&mut self, elem: C) -> Result<(), Self::Error>;
     /// Pops an element off this stack if there are things in the stack, returning it.
-    fn pop(&mut self) -> Option<Self::Content>;
+    fn pop(&mut self) -> Option<C>;
     /// Drains all the elements off the stack, starting from the start.
-    fn drain_all(&mut self) -> impl Iterator<Item = Self::Content>;
+    fn drain_all(&mut self) -> impl Iterator<Item = C>;
 
     /// Enstacks elements in an iterator onto the end of this queue.
     fn push_iter(
         &mut self,
-        elems: impl IntoIterator<Item = Self::Content>,
+        elems: impl IntoIterator<Item = C>,
     ) -> Result<(), (Self::Error, usize)> {
         for (idx, elem) in elems.into_iter().enumerate() {
             self.push(elem).map_err(|e| (e, idx))?
@@ -88,14 +92,10 @@ pub trait StackContainer: IntoIterator<Item = Self::Content> {
 
 #[cfg(feature = "alloc")]
 mod alloc_impl {
-    use crate::storage::{QueueContainer, StackContainer, StorableText};
+    use crate::storage::{QueueContainer, StackContainer, TextContainer};
     use core::convert::Infallible;
 
-    impl StorableText for alloc::vec::Vec<u8> {
-        fn len(&self) -> usize {
-            self.len()
-        }
-
+    impl TextContainer for alloc::vec::Vec<u8> {
         fn push_ascii(&mut self, c: u8) -> Result<(), Self::Error> {
             self.push(c);
             Ok(())
@@ -105,46 +105,56 @@ mod alloc_impl {
             self.iter().copied()
         }
     }
-    impl<T> StackContainer for alloc::vec::Vec<T> {
-        type Content = T;
+    impl<T> StackContainer<T> for alloc::vec::Vec<T> {
         type Error = Infallible;
+
+        fn new() -> Self {
+            alloc::vec::Vec::new()
+        }
 
         fn len(&self) -> usize {
             self.len()
         }
 
-        fn push(&mut self, elem: Self::Content) -> Result<(), Self::Error> {
+        fn push(&mut self, elem: T) -> Result<(), Self::Error> {
             self.push(elem);
             Ok(())
         }
 
-        fn pop(&mut self) -> Option<Self::Content> {
+        fn pop(&mut self) -> Option<T> {
             self.pop()
         }
 
-        fn drain_all(&mut self) -> impl Iterator<Item = Self::Content> {
+        fn drain_all(&mut self) -> impl Iterator<Item = T> {
             self.drain(..)
         }
     }
-    impl<T> QueueContainer for alloc::collections::vec_deque::VecDeque<T> {
-        type Content = T;
+    impl<T> QueueContainer<T> for alloc::collections::vec_deque::VecDeque<T> {
         type Error = Infallible;
+
+        fn new() -> Self {
+            alloc::collections::vec_deque::VecDeque::new()
+        }
 
         fn len(&self) -> usize {
             self.len()
         }
 
-        fn enqueue(&mut self, elem: Self::Content) -> Result<(), Self::Error> {
+        fn enqueue(&mut self, elem: T) -> Result<(), Self::Error> {
             self.push_back(elem);
             Ok(())
         }
 
-        fn dequeue(&mut self) -> Option<Self::Content> {
+        fn dequeue(&mut self) -> Option<T> {
             self.pop_front()
         }
 
-        fn peek(&self) -> Option<&Self::Content> {
+        fn peek(&self) -> Option<&T> {
             self.front()
+        }
+
+        fn peek_mut(&mut self) -> Option<&mut T> {
+            self.front_mut()
         }
     }
 }
@@ -152,10 +162,10 @@ mod alloc_impl {
 mod heapless_impl {
     use crate::{
         error::StorageError,
-        storage::{QueueContainer, StackContainer, StorableText},
+        storage::{QueueContainer, StackContainer, TextContainer},
     };
 
-    impl<const S: usize> StorableText for heapless::vec::Vec<u8, S> {
+    impl<const S: usize> TextContainer for heapless::vec::Vec<u8, S> {
         fn push_ascii(&mut self, c: u8) -> Result<(), Self::Error> {
             if StackContainer::push(&mut self, c).is_err() {
                 Err(StorageError::NotEnoughStorage)
@@ -168,15 +178,14 @@ mod heapless_impl {
             self.iter().copied()
         }
     }
-    impl<const S: usize, T> StackContainer for heapless::vec::Vec<T, S> {
+    impl<const S: usize, T> StackContainer<T> for heapless::vec::Vec<T, S> {
         type Error = StorageError;
-        type Content = T;
 
         fn len(&self) -> usize {
             self.len()
         }
 
-        fn push(&mut self, elem: Self::Content) -> Result<(), Self::Error> {
+        fn push(&mut self, elem: T) -> Result<(), Self::Error> {
             if self.push(elem).is_err() {
                 Err(StorageError::NotEnoughStorage)
             } else {
@@ -184,23 +193,22 @@ mod heapless_impl {
             }
         }
 
-        fn pop(&mut self) -> Option<Self::Content> {
+        fn pop(&mut self) -> Option<T> {
             self.pop()
         }
 
-        fn drain_all(&mut self) -> impl Iterator<Item = Self::Content> {
+        fn drain_all(&mut self) -> impl Iterator<Item = T> {
             self.drain(..)
         }
     }
-    impl<const N: usize, T> QueueContainer for heapless::deque::Deque<T, N> {
-        type Content = T;
+    impl<const N: usize, T> QueueContainer<T> for heapless::deque::Deque<T, N> {
         type Error = StorageError;
 
         fn len(&self) -> usize {
             self.len()
         }
 
-        fn enqueue(&mut self, elem: Self::Content) -> Result<(), Self::Error> {
+        fn enqueue(&mut self, elem: T) -> Result<(), Self::Error> {
             if self.push_back(elem).is_err() {
                 Err(StorageError::NotEnoughStorage)
             } else {
@@ -208,11 +216,11 @@ mod heapless_impl {
             }
         }
 
-        fn dequeue(&mut self) -> Option<Self::Content> {
+        fn dequeue(&mut self) -> Option<T> {
             self.pop_front()
         }
 
-        fn peek(&self) -> Option<&Self::Content> {
+        fn peek(&self) -> Option<&T> {
             self.front()
         }
     }
