@@ -2,16 +2,16 @@
 
 use crate::{
     ScreenCoordinates,
-    storage::{QueueContainer, TextContainer},
+    storage::{Storage, TextContainer},
     ui::transition::Transition,
 };
 
 #[derive(Debug)]
-pub(crate) struct ScreenElement<S: TextContainer, Q: QueueContainer<Transition<S>>> {
-    pub(crate) content: ScreenContent<S>,
+pub(crate) struct ScreenElement<S: Storage> {
+    pub(crate) content: ScreenContent<S::Text>,
     pub(crate) pos: ScreenCoordinates,
     pub(crate) hidden: bool,
-    pub(crate) transitions: Q,
+    pub(crate) transitions: S::Queue<Transition<S::Text>>,
     pub(crate) transition_progress: Option<u8>,
 }
 

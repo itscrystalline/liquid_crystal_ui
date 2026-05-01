@@ -21,7 +21,7 @@ pub use embedded_hal_async::delay::DelayNs as ADelay;
 pub trait AsyncLcdBackend<
     const CHAR_HEIGHT: usize,
     const CUSTOM_CHARACTER_SLOTS: usize,
-    S: TextContainer,
+    T: TextContainer,
 >
 {
     /// The error type that is emitted by the driver. If the driver doesn't fail, you can use
@@ -64,7 +64,7 @@ pub trait AsyncLcdBackend<
     async fn write_str(
         &mut self,
         delay: &mut impl ADelay,
-        s: &S,
+        s: &T,
     ) -> Result<&mut Self, Self::Error> {
         for ch in s.chars() {
             self.write_byte(delay, ch).await?;
@@ -77,7 +77,7 @@ pub trait AsyncLcdBackend<
 pub trait LcdBackend<
     const CHAR_HEIGHT: usize,
     const CUSTOM_CHARACTER_SLOTS: usize,
-    S: TextContainer,
+    T: TextContainer,
 >
 {
     /// The error type that is emitted by the driver. If the driver doesn't fail, you can use
@@ -113,7 +113,7 @@ pub trait LcdBackend<
     ) -> Result<&mut Self, Self::Error>;
 
     /// Writes a string of ASCII characters to the screen.
-    fn write_str(&mut self, delay: &mut impl Delay, s: &S) -> Result<&mut Self, Self::Error> {
+    fn write_str(&mut self, delay: &mut impl Delay, s: &T) -> Result<&mut Self, Self::Error> {
         for ch in s.chars() {
             self.write_byte(delay, ch)?;
         }

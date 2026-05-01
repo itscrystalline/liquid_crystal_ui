@@ -1,7 +1,14 @@
-//! Storage adapter.
+//! Storage adapters.
+
+pub trait Storage {
+    type Text: TextContainer;
+    type Queue<T>: QueueContainer<T>;
+    type Vec<T>: StackContainer<T>;
+    type Set<T: Ord>: SetContainer<T>;
+}
 
 /// Trait abstracting ASCII text containers (strings).
-pub trait TextContainer: StackContainer<u8> {
+pub trait TextContainer: StackContainer<u8> + Debug {
     /// If the string is empty.
     fn is_empty(&self) -> bool {
         StackContainer::is_empty(self)
@@ -26,7 +33,7 @@ pub trait TextContainer: StackContainer<u8> {
     }
 }
 /// Trait abstracting queues.
-pub trait QueueContainer<C>: IntoIterator<Item = C> + Sized {
+pub trait QueueContainer<C>: IntoIterator<Item = C> + Sized + Default + Extend<C> {
     /// The error type this container may emit.
     type Error;
 
@@ -46,20 +53,11 @@ pub trait QueueContainer<C>: IntoIterator<Item = C> + Sized {
     fn peek(&self) -> Option<&C>;
     /// Mutable ref to the front of the queue, without dequeueing it.
     fn peek_mut(&mut self) -> Option<&mut C>;
-
-    /// Enqueues elements in an iterator onto the end of this queue.
-    fn enqueue_iter(
-        &mut self,
-        elems: impl IntoIterator<Item = C>,
-    ) -> Result<(), (Self::Error, usize)> {
-        for (idx, elem) in elems.into_iter().enumerate() {
-            self.enqueue(elem).map_err(|e| (e, idx))?
-        }
-        Ok(())
-    }
 }
 /// Trait abstracting `Vec`. idk vro
-pub trait StackContainer<C>: IntoIterator<Item = C> + Sized {
+pub trait StackContainer<C>:
+    FromIterator<C> + IntoIterator<Item = C> + Sized + Default + Extend<C>
+{
     /// The error type this satck may emit.
     type Error;
 
@@ -75,25 +73,49 @@ pub trait StackContainer<C>: IntoIterator<Item = C> + Sized {
     fn push(&mut self, elem: C) -> Result<(), Self::Error>;
     /// Pops an element off this stack if there are things in the stack, returning it.
     fn pop(&mut self) -> Option<C>;
-    /// Drains all the elements off the stack, starting from the start.
+    /// Drains all the elements off the stack, starting from the bottom.
     fn drain_all(&mut self) -> impl Iterator<Item = C>;
+    /// Produces a ref to all the elements on the stack, starting from the bottom.
+    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a C>
+    where
+        C: 'a;
+    /// Produces a mutable ref to all the elements on the stack, starting from the bottom.
+    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut C>
+    where
+        C: 'a;
+    /// If the container contains this element.
+    fn contains(&self, elem: &C) -> bool
+    where
+        C: PartialEq;
+}
 
-    /// Enstacks elements in an iterator onto the end of this queue.
-    fn push_iter(
-        &mut self,
-        elems: impl IntoIterator<Item = C>,
-    ) -> Result<(), (Self::Error, usize)> {
-        for (idx, elem) in elems.into_iter().enumerate() {
-            self.push(elem).map_err(|e| (e, idx))?
-        }
-        Ok(())
-    }
+/// Trait abstracting sets.
+pub trait SetContainer<C>: IntoIterator<Item = C> + Sized + Default + Extend<C> {
+    /// The error type this set may emit.
+    type Error;
+
+    /// Creates an empty set.
+    fn new() -> Self;
+    /// Iterator over the set.
+    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a C>
+    where
+        C: 'a;
 }
 
 #[cfg(feature = "alloc")]
 mod alloc_impl {
-    use crate::storage::{QueueContainer, StackContainer, TextContainer};
+    use alloc::collections::btree_set::BTreeSet;
+
+    use crate::storage::{QueueContainer, SetContainer, StackContainer, Storage, TextContainer};
     use core::convert::Infallible;
+
+    pub struct AllocStorage;
+    impl Storage for AllocStorage {
+        type Text = alloc::vec::Vec<u8>;
+        type Queue<T> = alloc::collections::VecDeque<T>;
+        type Vec<T> = alloc::vec::Vec<T>;
+        type Set<T: Ord> = alloc::collections::BTreeSet<T>;
+    }
 
     impl TextContainer for alloc::vec::Vec<u8> {
         fn push_ascii(&mut self, c: u8) -> Result<(), Self::Error> {
@@ -128,6 +150,27 @@ mod alloc_impl {
         fn drain_all(&mut self) -> impl Iterator<Item = T> {
             self.drain(..)
         }
+
+        fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut T>
+        where
+            T: 'a,
+        {
+            self.as_mut_slice().iter_mut()
+        }
+
+        fn contains(&self, elem: &T) -> bool
+        where
+            T: PartialEq,
+        {
+            self.as_slice().contains(elem)
+        }
+
+        fn iter<'a>(&'a self) -> impl Iterator<Item = &'a T>
+        where
+            T: 'a,
+        {
+            self.as_slice().iter()
+        }
     }
     impl<T> QueueContainer<T> for alloc::collections::vec_deque::VecDeque<T> {
         type Error = Infallible;
@@ -157,9 +200,25 @@ mod alloc_impl {
             self.front_mut()
         }
     }
+    impl<T: Ord> SetContainer<T> for alloc::collections::BTreeSet<T> {
+        type Error = Infallible;
+
+        fn new() -> Self {
+            BTreeSet::new()
+        }
+
+        fn iter<'a>(&'a self) -> impl Iterator<Item = &'a T>
+        where
+            T: 'a,
+        {
+            self.iter()
+        }
+    }
 }
 #[cfg(feature = "heapless")]
 mod heapless_impl {
+    use heapless::{Deque, Vec};
+
     use crate::{
         error::StorageError,
         storage::{QueueContainer, StackContainer, TextContainer},
@@ -167,7 +226,7 @@ mod heapless_impl {
 
     impl<const S: usize> TextContainer for heapless::vec::Vec<u8, S> {
         fn push_ascii(&mut self, c: u8) -> Result<(), Self::Error> {
-            if StackContainer::push(&mut self, c).is_err() {
+            if self.push(c).is_err() {
                 Err(StorageError::NotEnoughStorage)
             } else {
                 Ok(())
@@ -182,7 +241,7 @@ mod heapless_impl {
         type Error = StorageError;
 
         fn len(&self) -> usize {
-            self.len()
+            self.as_slice().len()
         }
 
         fn push(&mut self, elem: T) -> Result<(), Self::Error> {
@@ -199,6 +258,31 @@ mod heapless_impl {
 
         fn drain_all(&mut self) -> impl Iterator<Item = T> {
             self.drain(..)
+        }
+
+        fn new() -> Self {
+            Vec::new()
+        }
+
+        fn iter<'a>(&'a self) -> impl Iterator<Item = &'a T>
+        where
+            T: 'a,
+        {
+            self.as_slice().iter()
+        }
+
+        fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut T>
+        where
+            T: 'a,
+        {
+            self.as_mut_slice().iter_mut()
+        }
+
+        fn contains(&self, elem: &T) -> bool
+        where
+            T: PartialEq,
+        {
+            self.as_slice().contains(elem)
         }
     }
     impl<const N: usize, T> QueueContainer<T> for heapless::deque::Deque<T, N> {
@@ -223,8 +307,18 @@ mod heapless_impl {
         fn peek(&self) -> Option<&T> {
             self.front()
         }
+
+        fn new() -> Self {
+            Deque::new()
+        }
+
+        fn peek_mut(&mut self) -> Option<&mut T> {
+            self.front_mut()
+        }
     }
 }
+
+use core::fmt::Debug;
 
 #[cfg(feature = "alloc")]
 pub use alloc_impl::*;

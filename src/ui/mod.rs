@@ -4,9 +4,6 @@
 pub mod transition;
 pub mod widget;
 
-#[cfg(not(feature = "alloc"))]
-use heapless::{string::String, vec::Vec};
-
 /// Helper macro to generate bitmap chaaracters, for use with the display and
 /// [`crate::ui::widget::ScreenContent::CustomCharacter`].
 ///
@@ -52,24 +49,19 @@ use crate::{
     },
 };
 use crate::{
-    backend::LcdBackend,
-    storage::{QueueContainer, StackContainer, TextContainer},
+    // backend::LcdBackend,
+    storage::{QueueContainer, SetContainer, StackContainer, Storage},
     ui::widget::ScreenElement,
 };
 
 #[derive(Debug)]
-struct ScreenMetadata<
-    const CUSTOM_CHARACTER_SLOTS: usize,
-    T: TextContainer,
-    Q: QueueContainer<Transition<T>>,
-    S: StackContainer<(u32, ScreenElement<T, Q>)>,
-> {
-    elems: S,
-    last_frame_drawn: BTreeSet<ScreenCoordinates>,
+struct ScreenMetadata<const CUSTOM_CHARACTER_SLOTS: usize, S: Storage> {
+    elems: S::Vec<(u32, ScreenElement<S>)>,
+    last_frame_drawn: S::Set<ScreenCoordinates>,
     custom_characters: [Option<u32>; CUSTOM_CHARACTER_SLOTS], // idx -> screen character slot, u32 -> character id
 }
-impl<const CUSTOM_CHARACTER_SLOTS: usize, S: TextContainer, Q: QueueContainer<Transition<S>>>
-    Default for ScreenMetadata<CUSTOM_CHARACTER_SLOTS, S, Q>
+impl<const CUSTOM_CHARACTER_SLOTS: usize, S: Storage> Default
+    for ScreenMetadata<CUSTOM_CHARACTER_SLOTS, S>
 {
     fn default() -> Self {
         Self {
@@ -80,51 +72,49 @@ impl<const CUSTOM_CHARACTER_SLOTS: usize, S: TextContainer, Q: QueueContainer<Tr
     }
 }
 
-/// The manager for all UI widgets. Blocking version.
-pub struct LcdScreen<
-    const CHAR_HEIGHT: usize,
-    const CUSTOM_CHARACTER_SLOTS: usize,
-    S: TextContainer,
-    Q: QueueContainer<Transition<S>>,
-    D: LcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S>,
-> {
-    lcd: D,
-    meta: ScreenMetadata<CUSTOM_CHARACTER_SLOTS, S, Q>,
-    id_counter: u32,
-}
+// /// The manager for all UI widgets. Blocking version.
+// pub struct LcdScreen<
+//     const CHAR_HEIGHT: usize,
+//     const CUSTOM_CHARACTER_SLOTS: usize,
+//     S: TextContainer,
+//     Q: QueueContainer<Transition<S>>,
+//     D: LcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S>,
+// > {
+//     lcd: D,
+//     meta: ScreenMetadata<CUSTOM_CHARACTER_SLOTS, S, Q>,
+//     id_counter: u32,
+// }
 
 /// The manager for all UI widgets. Async version.
 #[cfg(feature = "async")]
 pub struct AsyncLcdScreen<
     const CHAR_HEIGHT: usize,
     const CUSTOM_CHARACTER_SLOTS: usize,
-    S: TextContainer,
-    Q: QueueContainer<Transition<S>>,
-    D: AsyncLcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S>,
+    S: Storage,
+    D: AsyncLcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S::Text>,
 > {
     lcd: D,
-    meta: ScreenMetadata<CUSTOM_CHARACTER_SLOTS, S, Q>,
+    meta: ScreenMetadata<CUSTOM_CHARACTER_SLOTS, S>,
     id_counter: u32,
 }
 
-impl<
-    const CHAR_HEIGHT: usize,
-    const CUSTOM_CHARACTER_SLOTS: usize,
-    S: TextContainer,
-    Q: QueueContainer<Transition<S>>,
-    D: LcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S>,
-> LcdScreen<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S, Q, D>
-{
-}
+// impl<
+//     const CHAR_HEIGHT: usize,
+//     const CUSTOM_CHARACTER_SLOTS: usize,
+//     S: TextContainer,
+//     Q: QueueContainer<Transition<S>>,
+//     D: LcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S>,
+// > LcdScreen<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S, Q, D>
+// {
+// }
 
 #[cfg(feature = "async")]
 impl<
     const CHAR_HEIGHT: usize,
     const CUSTOM_CHARACTER_SLOTS: usize,
-    S: TextContainer + Debug,
-    Q: QueueContainer<Transition<S>> + Debug,
-    D: AsyncLcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S>,
-> AsyncLcdScreen<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S, Q, D>
+    S: Storage,
+    D: AsyncLcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S::Text>,
+> AsyncLcdScreen<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S, D>
 {
     fn advance_id(&mut self) -> u32 {
         let id = self.id_counter;
@@ -147,10 +137,13 @@ impl<
     /// Creates a new widget on the screen.
     pub async fn new_elem(
         &mut self,
-        content: ScreenContent<S>,
+        content: ScreenContent<S::Text>,
         pos: ScreenCoordinates,
         hidden: bool,
-    ) -> u32 {
+    ) -> Result<
+        u32,
+        <S::Vec<(u32, ScreenElement<S>)> as StackContainer<(u32, ScreenElement<S>)>>::Error,
+    > {
         let id = self.advance_id();
         let screen_state = &mut self.meta;
         screen_state.elems.push((
@@ -159,11 +152,11 @@ impl<
                 content,
                 pos,
                 hidden,
-                transitions: Q::new(),
+                transitions: S::Queue::new(),
                 transition_progress: None,
             },
-        ));
-        id
+        ))?;
+        Ok(id)
     }
 
     /// Registers a custom character for use with the screen. You can use [`macro@bitmap`] to
@@ -242,13 +235,16 @@ impl<
     pub async fn queue_transition(
         &mut self,
         key: u32,
-        transition: Transition<S>,
-    ) -> Result<&mut Self, Q::Error> {
+        transition: Transition<S::Text>,
+    ) -> Result<
+        &mut Self,
+        <S::Queue<Transition<S::Text>> as QueueContainer<Transition<S::Text>>>::Error,
+    > {
         let screen_state = &mut self.meta;
         let found = screen_state.elems.iter_mut().find(|(id, _)| *id == key);
         if let Some((_, elem)) = found {
             elem.transitions.enqueue(transition)?;
-            debug!("{elem:?}")
+            // debug!("{elem:?}")
         } else {
             error!("no elem with id {key}")
         }
@@ -258,7 +254,7 @@ impl<
     /// Ticks the UI and all it's widgets, then draws them to the screen.
     pub async fn draw(&mut self) -> Result<(), D::Error>
     where
-        <Q as QueueContainer<Transition<S>>>::Error: Debug,
+        <S::Queue<Transition<S::Text>> as QueueContainer<Transition<S::Text>>>::Error: Debug,
     {
         let delay = &mut embassy_time::Delay;
         let screen_state = &mut self.meta;
@@ -266,7 +262,7 @@ impl<
         // run transitions
         screen_state.elems = screen_state
             .elems
-            .drain(..)
+            .drain_all()
             .filter_map(|(id, mut elem)| {
                 match elem.transitions.peek_mut() {
                     Some(Transition::Delete) => None,
@@ -328,8 +324,8 @@ impl<
             })
             .collect();
 
-        let mut drawn_this_frame = Vec::new();
-        for (_, elem) in &screen_state.elems {
+        let mut drawn_this_frame = S::Vec::new();
+        for (_, elem) in screen_state.elems.iter() {
             if !elem.hidden {
                 self.lcd.move_cursor(delay, elem.pos).await?;
                 match &elem.content {
@@ -361,7 +357,7 @@ impl<
         }
 
         let drawn_this_frame = {
-            let mut s = BTreeSet::new();
+            let mut s = S::Set::new();
             s.extend(drawn_this_frame);
             s
         };
