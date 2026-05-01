@@ -45,18 +45,18 @@ use crate::{
     backend::AsyncLcdBackend,
     ui::{
         transition::Transition,
-        widget::{CustomCharacterRef, ScreenContent},
+        widget::{CustomCharacterRef, WidgetContent},
     },
 };
 use crate::{
     // backend::LcdBackend,
     storage::{QueueContainer, SetContainer, StackContainer, Storage},
-    ui::widget::ScreenElement,
+    ui::widget::Widget,
 };
 
 #[derive(Debug)]
 struct ScreenMetadata<const CUSTOM_CHARACTER_SLOTS: usize, S: Storage> {
-    elems: S::Vec<(u32, ScreenElement<S>)>,
+    elems: S::Vec<(u32, Widget<S>)>,
     last_frame_drawn: S::Set<ScreenCoordinates>,
     custom_characters: [Option<u32>; CUSTOM_CHARACTER_SLOTS], // idx -> screen character slot, u32 -> character id
 }
@@ -137,18 +137,15 @@ impl<
     /// Creates a new widget on the screen.
     pub async fn new_elem(
         &mut self,
-        content: ScreenContent<S::Text>,
+        content: WidgetContent<S::Text>,
         pos: ScreenCoordinates,
         hidden: bool,
-    ) -> Result<
-        u32,
-        <S::Vec<(u32, ScreenElement<S>)> as StackContainer<(u32, ScreenElement<S>)>>::Error,
-    > {
+    ) -> Result<u32, <S::Vec<(u32, Widget<S>)> as StackContainer<(u32, Widget<S>)>>::Error> {
         let id = self.advance_id();
         let screen_state = &mut self.meta;
         screen_state.elems.push((
             id,
-            ScreenElement {
+            Widget {
                 content,
                 pos,
                 hidden,
@@ -251,7 +248,7 @@ impl<
         Ok(self)
     }
 
-    /// Ticks the UI and all it's widgets, then draws them to the screen.
+    /// Ticks the UI and all of its widgets, then draws them to the screen.
     pub async fn draw(&mut self) -> Result<(), D::Error>
     where
         <S::Queue<Transition<S::Text>> as QueueContainer<Transition<S::Text>>>::Error: Debug,
@@ -329,14 +326,14 @@ impl<
             if !elem.hidden {
                 self.lcd.move_cursor(delay, elem.pos).await?;
                 match &elem.content {
-                    ScreenContent::Text(ascii_string) => {
+                    WidgetContent::Text(ascii_string) => {
                         self.lcd.write_str(delay, ascii_string).await?;
                         drawn_this_frame.extend(
                             (elem.pos.x()..(elem.pos.x() + ascii_string.len() as u8))
                                 .map(|x| ScreenCoordinates::at(x, elem.pos.y())),
                         );
                     }
-                    ScreenContent::CustomCharacter(CustomCharacterRef(_, idx)) => {
+                    WidgetContent::CustomCharacter(CustomCharacterRef(_, idx)) => {
                         self.lcd.write_custom_character(delay, *idx as u8).await?;
                         drawn_this_frame.push(elem.pos);
                     }
