@@ -210,6 +210,16 @@ impl<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS: usize, S: Storage>
             })
             .collect();
     }
+
+    fn addr_of_character(&self, id: u32) -> Option<u8> {
+        self.meta
+            .custom_characters
+            .iter()
+            .enumerate()
+            .filter(|(_, i)| i.is_some_and(|i| i == id))
+            .next()
+            .map(|(idx, _)| idx as u8)
+    }
 }
 
 /// The manager for all UI widgets. Blocking version.
@@ -298,7 +308,7 @@ impl<
         if let Some((idx, slot)) = self.core.free_slot_mut() {
             self.lcd
                 .set_custom_character_at(&mut self.delay, idx as u8, bitmap)?;
-            Ok(Some(CustomCharacterRef(*slot.insert(id), idx)))
+            Ok(Some(CustomCharacterRef(*slot.insert(id))))
         } else {
             Ok(None)
         }
@@ -327,7 +337,7 @@ impl<
         if let Some((idx, slot)) = self.core.find_slot_mut(old_character) {
             self.lcd
                 .set_custom_character_at(&mut self.delay, idx as u8, new)?;
-            Ok(Some(CustomCharacterRef(*slot.insert(id), idx)))
+            Ok(Some(CustomCharacterRef(*slot.insert(id))))
         } else {
             Ok(None)
         }
@@ -364,9 +374,14 @@ impl<
                                 .map(|x| ScreenCoordinates::at(x, elem.pos.y())),
                         );
                     }
-                    WidgetContent::CustomCharacter(CustomCharacterRef(_, idx)) => {
-                        self.lcd.write_custom_character(delay, *idx as u8)?;
-                        drawn_this_frame.push(elem.pos)?;
+                    WidgetContent::CustomCharacter(CustomCharacterRef(id)) => {
+                        if let Some(idx) = self.core.addr_of_character(*id) {
+                            self.lcd.write_custom_character(delay, idx)?;
+                            drawn_this_frame.push(elem.pos)?;
+                        } else {
+                            #[cfg(feature = "log")]
+                            error!("No custom character with ID {id}!")
+                        }
                     }
                 }
             }

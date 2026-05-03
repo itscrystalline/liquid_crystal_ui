@@ -19,7 +19,7 @@ pub struct Widget<S: Storage> {
 
 #[derive(Clone, Copy, Debug)]
 /// A reference to a custom character, agnostic of it's actual index in the screen RAM.
-pub struct CustomCharacterRef(pub(crate) u32, pub(crate) usize);
+pub struct CustomCharacterRef(pub(crate) u32);
 
 #[derive(Debug)]
 /// What a widget will display.
