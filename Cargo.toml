@@ -22,8 +22,6 @@ num-traits = { version = "0.2.19", default-features = false }
 thiserror = { version = "2.0.18", default-features = false }
 
 [features]
-# default = ["async", "log", "heapless", "liquid_crystal_driver"] # dont forget to remove this vro
-# default = ["async", "log", "alloc", "liquid_crystal_driver"] # dont forget to remove this vro
 default = []
 
 async = ["dep:embedded-hal-async", "liquid_crystal?/async"]
