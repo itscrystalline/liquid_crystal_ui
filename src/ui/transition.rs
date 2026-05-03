@@ -28,7 +28,7 @@ pub enum Transition<S: TextContainer> {
         /// How many frames to idle for.
         duration: u8,
     },
-    /// Changes to another [`crate::ui::widget::ScreenContent`].
+    /// Changes to another [`crate::ui::widget::WidgetContent`].
     ChangeTo(WidgetContent<S>),
     /// Hides the widget.
     Hide,

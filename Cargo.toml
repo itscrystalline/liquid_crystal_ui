@@ -9,6 +9,8 @@ repository = "https://github.com/RecursiveError/liquid_crystal"
 keywords = ["lcd", "liquidcrystal", "HD44780", "embedded-hal", "tui"]
 categories = ["embedded", "no-std"]
 
+[package.metadata.docs.rs]
+all-features = true
 
 [dependencies]
 embedded-hal = "1.0"
@@ -21,7 +23,8 @@ thiserror = { version = "2.0.18", default-features = false }
 
 [features]
 # default = ["async", "log", "heapless", "liquid_crystal_driver"] # dont forget to remove this vro
-default = ["async", "log", "alloc", "liquid_crystal_driver"] # dont forget to remove this vro
+# default = ["async", "log", "alloc", "liquid_crystal_driver"] # dont forget to remove this vro
+default = []
 
 async = ["dep:embedded-hal-async", "liquid_crystal?/async"]
 alloc = []

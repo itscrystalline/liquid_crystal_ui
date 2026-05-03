@@ -1,4 +1,13 @@
 //! Storage adapters.
+//!
+//! ### Usage with custom containers
+//! If the [`AllocStorage`] or [`HeaplessStorage`] adapters don't suit your usecase e.g. you have
+//! custom buffers that you want to use as backing storage, you will have to create an adapter
+//! struct, then implement the [`Storage`] trait on it. For the associated types in the [`Storage`]
+//! trait, you must also implement [`TextContainer`], [`QueueContainer`], [`StackContainer`] and
+//! [`SetContainer`] on those types as well. See impls for [`AllocStorage`] or [`HeaplessStorage`]
+//! for examples.
+
 use crate::error::StorageError;
 use core::fmt::Debug;
 use core::hash::Hash;

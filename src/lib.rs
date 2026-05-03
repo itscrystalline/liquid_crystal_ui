@@ -1,5 +1,5 @@
 //! # liquid_crystal_ui
-//! A retained-mode-esque UI library for displaying to small alphanumeric LCD displays, like the
+//! A retained mode UI library for displaying to small alphanumeric LCD displays, like the
 //! ones on cash registers or something
 
 #![no_std]
@@ -13,11 +13,6 @@ pub mod ui;
 
 pub mod error;
 pub mod storage;
-
-/// Blocking (Sync) mode.
-pub struct Blocking;
-/// Asynchronous mode.
-pub struct Async;
 
 /// Screen Coordinates on the display.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]

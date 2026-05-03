@@ -1,9 +1,6 @@
 //! LCD Backends. You must implement [`LcdBackend`] or
 //! [`AsyncLcdBackend`] on your LCD drivers (or wrap them in structs, then implement)
-//! to use them with this library.
-//!
-//! Usage
-//! TBA
+//! to use them with this library. See the required trait methods for more details.
 
 use core::convert::Infallible;
 use core::fmt::{Debug, Display};
@@ -30,7 +27,8 @@ pub trait AsyncLcdBackend<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS
     type Error: BackendError;
 
     /// Initializes the screen after initializing the driver. This function should disable the
-    /// cursor and disable autoscroll.
+    /// cursor and disable autoscroll. Note that this function accepts an already initialized
+    /// driver, But not necessarily an initialized screen state.
     async fn prepare_screen(&mut self, delay: &mut impl ADelay) -> Result<&mut Self, Self::Error>;
     /// Clears the screen.
     async fn clear(&mut self, delay: &mut impl ADelay) -> Result<&mut Self, Self::Error>;
@@ -81,7 +79,8 @@ pub trait LcdBackend<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS: usi
     type Error: BackendError;
 
     /// Initializes the screen after initializing the driver. This function should disable the
-    /// cursor and disable autoscroll.
+    /// cursor and disable autoscroll. Note that this function accepts an already initialized
+    /// driver, But not necessarily an initialized screen state.
     fn prepare_screen(&mut self, delay: &mut impl Delay) -> Result<&mut Self, Self::Error>;
     /// Clears the screen.
     fn clear(&mut self, delay: &mut impl Delay) -> Result<&mut Self, Self::Error>;

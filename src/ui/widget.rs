@@ -31,7 +31,7 @@ pub enum WidgetContent<S: TextContainer> {
 }
 
 impl<S: TextContainer> WidgetContent<S> {
-    /// Shorthand for creating a [`ScreenContent::Text`] from an `&str`.
+    /// Shorthand for creating a [`WidgetContent::Text`] from an `&str`.
     pub fn text(c: &str) -> Result<Self, StorageError> {
         Ok(WidgetContent::Text(S::from_str(c)?))
     }
