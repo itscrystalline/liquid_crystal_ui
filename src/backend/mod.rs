@@ -5,6 +5,9 @@
 //! Usage
 //! TBA
 
+use core::convert::Infallible;
+use core::fmt::{Debug, Display};
+
 use crate::ScreenCoordinates;
 use crate::storage::TextContainer;
 
@@ -14,6 +17,10 @@ pub mod liquid_crystal;
 pub use embedded_hal::delay::DelayNs as Delay;
 #[cfg(feature = "async")]
 pub use embedded_hal_async::delay::DelayNs as ADelay;
+
+/// Marker trait for errors that can be generated from a LCD backend.
+pub trait BackendError: Debug + Display {}
+impl BackendError for Infallible {}
 
 #[cfg(feature = "async")]
 #[allow(async_fn_in_trait)]
@@ -26,7 +33,7 @@ pub trait AsyncLcdBackend<
 {
     /// The error type that is emitted by the driver. If the driver doesn't fail, you can use
     /// [`core::convert::Infallible`] or the `!` (never) type.
-    type Error;
+    type Error: BackendError;
 
     /// Initializes the screen after initializing the driver. This function should disable the
     /// cursor and disable autoscroll.
@@ -82,7 +89,7 @@ pub trait LcdBackend<
 {
     /// The error type that is emitted by the driver. If the driver doesn't fail, you can use
     /// [`core::convert::Infallible`] or the `!` (never) type.
-    type Error;
+    type Error: BackendError;
 
     /// Initializes the screen after initializing the driver. This function should disable the
     /// cursor and disable autoscroll.

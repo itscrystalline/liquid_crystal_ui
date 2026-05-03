@@ -20,7 +20,7 @@ pub struct Blocking;
 pub struct Async;
 
 /// Screen Coordinates on the display.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ScreenCoordinates {
     /// The Y coordinate.
     row: u8,

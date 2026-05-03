@@ -1,10 +1,16 @@
 //! Storage adapters.
+use core::hash::Hash;
 
+/// Trait describing a family of storage containers to use.
 pub trait Storage {
+    /// ASCII String container. See [`TextContainer`].
     type Text: TextContainer;
+    /// Queue container. See [`QueueContainer`].
     type Queue<T>: QueueContainer<T>;
+    /// Stack (Vec-like) container. See [`StackContainer`].
     type Vec<T>: StackContainer<T>;
-    type Set<T: Ord>: SetContainer<T>;
+    /// Set container. See [`SetContainer`].
+    type Set<T: Ord + Hash>: SetContainer<T>;
 }
 
 /// Trait abstracting ASCII text containers (strings).
@@ -35,7 +41,7 @@ pub trait TextContainer: StackContainer<u8> + Debug {
 /// Trait abstracting queues.
 pub trait QueueContainer<C>: IntoIterator<Item = C> + Sized + Default + Extend<C> {
     /// The error type this container may emit.
-    type Error;
+    type Error: Debug + Display;
 
     /// Creates an empty container.
     fn new() -> Self;
@@ -59,7 +65,7 @@ pub trait StackContainer<C>:
     FromIterator<C> + IntoIterator<Item = C> + Sized + Default + Extend<C>
 {
     /// The error type this satck may emit.
-    type Error;
+    type Error: Debug + Display;
 
     /// Creates an empty container.
     fn new() -> Self;
@@ -90,9 +96,9 @@ pub trait StackContainer<C>:
 }
 
 /// Trait abstracting sets.
-pub trait SetContainer<C>: IntoIterator<Item = C> + Sized + Default + Extend<C> {
+pub trait SetContainer<C>: Sized + Default + Extend<C> {
     /// The error type this set may emit.
-    type Error;
+    type Error: Debug + Display;
 
     /// Creates an empty set.
     fn new() -> Self;
@@ -108,13 +114,16 @@ mod alloc_impl {
 
     use crate::storage::{QueueContainer, SetContainer, StackContainer, Storage, TextContainer};
     use core::convert::Infallible;
+    use core::hash::Hash;
 
+    /// Tells [`crate::ui::LcdScreen`] and [`crate::ui::AsyncLcdScreen`] to use the `alloc` crate's
+    /// containers.
     pub struct AllocStorage;
     impl Storage for AllocStorage {
         type Text = alloc::vec::Vec<u8>;
         type Queue<T> = alloc::collections::VecDeque<T>;
         type Vec<T> = alloc::vec::Vec<T>;
-        type Set<T: Ord> = alloc::collections::BTreeSet<T>;
+        type Set<T: Ord + Hash> = alloc::collections::BTreeSet<T>;
     }
 
     impl TextContainer for alloc::vec::Vec<u8> {
@@ -200,7 +209,7 @@ mod alloc_impl {
             self.front_mut()
         }
     }
-    impl<T: Ord> SetContainer<T> for alloc::collections::BTreeSet<T> {
+    impl<T: Ord + Hash> SetContainer<T> for alloc::collections::BTreeSet<T> {
         type Error = Infallible;
 
         fn new() -> Self {
@@ -217,12 +226,24 @@ mod alloc_impl {
 }
 #[cfg(feature = "heapless")]
 mod heapless_impl {
-    use heapless::{Deque, Vec};
+    use core::hash::Hash;
+    use heapless::{Deque, Vec, index_set::FnvIndexSet};
 
     use crate::{
         error::StorageError,
-        storage::{QueueContainer, StackContainer, TextContainer},
+        storage::{QueueContainer, SetContainer, StackContainer, Storage, TextContainer},
     };
+
+    /// Tells [`crate::ui::LcdScreen`] and [`crate::ui::AsyncLcdScreen`] to use the `heapless` crate's
+    /// containers. the `MAX_CAPACITY` generic specifies the size for *all* containers, so it must
+    /// be a power of 2 via [`heapless::index_set::FnvIndexSet`]'s constraints on its capacity.
+    pub struct HeaplessStorage<const MAX_CAPACITY: usize>;
+    impl<const MAX_CAPACITY: usize> Storage for HeaplessStorage<MAX_CAPACITY> {
+        type Text = heapless::vec::Vec<u8, MAX_CAPACITY>;
+        type Queue<T> = heapless::deque::Deque<T, MAX_CAPACITY>;
+        type Vec<T> = heapless::vec::Vec<T, MAX_CAPACITY>;
+        type Set<T: Ord + Hash> = heapless::index_set::FnvIndexSet<T, MAX_CAPACITY>;
+    }
 
     impl<const S: usize> TextContainer for heapless::vec::Vec<u8, S> {
         fn push_ascii(&mut self, c: u8) -> Result<(), Self::Error> {
@@ -316,9 +337,23 @@ mod heapless_impl {
             self.front_mut()
         }
     }
+    impl<const N: usize, T: Ord + Hash> SetContainer<T> for heapless::index_set::FnvIndexSet<T, N> {
+        type Error = StorageError;
+
+        fn new() -> Self {
+            FnvIndexSet::new()
+        }
+
+        fn iter<'a>(&'a self) -> impl Iterator<Item = &'a T>
+        where
+            T: 'a,
+        {
+            self.iter()
+        }
+    }
 }
 
-use core::fmt::Debug;
+use core::fmt::{Debug, Display};
 
 #[cfg(feature = "alloc")]
 pub use alloc_impl::*;
