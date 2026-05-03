@@ -31,14 +31,6 @@ macro_rules! bitmap {
     };
 }
 
-// for some reason this needs to be here, even though .round() needs it
-use core::fmt::Debug;
-#[allow(unused_imports)]
-use num_traits::float::FloatCore;
-
-#[cfg(feature = "async")]
-use log::{debug, error};
-
 use crate::{
     ScreenCoordinates,
     backend::{BackendError, LcdBackend},
@@ -49,10 +41,20 @@ use crate::{
         widget::{CustomCharacterRef, Widget, WidgetContent},
     },
 };
+use core::fmt::Debug;
+// for some reason this needs to be here, even though .round() needs it
+#[allow(unused_imports)]
+use num_traits::float::FloatCore;
+
+#[cfg(feature = "log")]
+use log::{debug, error};
+
+#[cfg(feature = "async")]
+use crate::backend::AsyncLcdBackend;
 
 pub use embedded_hal::delay::DelayNs as Delay;
 #[cfg(feature = "async")]
-pub use embedded_hal_async::delay::DelayNs as ADelay;
+use embedded_hal_async::delay::DelayNs as ADelay;
 
 type IdWidget<S> = (u32, Widget<S>);
 
