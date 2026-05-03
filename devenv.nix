@@ -6,8 +6,8 @@
 }: {
   languages.rust = {
     enable = true;
-    channel = "stable";
-    version = "1.95.0";
+    channel = "nightly";
+    version = "2026-04-16";
   };
   # https://devenv.sh/packages/
   packages = with pkgs; [
