@@ -118,7 +118,7 @@ mod alloc_impl {
     use crate::storage::{QueueContainer, SetContainer, StackContainer, Storage, TextContainer};
     use core::hash::Hash;
 
-    /// Tells [`crate::ui::LcdScreen`] and [`crate::ui::AsyncLcdScreen`] to use the `alloc` crate's
+    /// Tells [`LcdScreen`](`crate::ui::LcdScreen`) and [`AsyncLcdScreen`](`crate::ui::AsyncLcdScreen`) to use the [`alloc`] crate's
     /// containers.
     pub struct AllocStorage;
     impl Storage for AllocStorage {
@@ -230,9 +230,9 @@ mod heapless_impl {
         storage::{QueueContainer, SetContainer, StackContainer, Storage, TextContainer},
     };
 
-    /// Tells [`crate::ui::LcdScreen`] and [`crate::ui::AsyncLcdScreen`] to use the `heapless` crate's
+    /// Tells [`LcdScreen`](`crate::ui::LcdScreen`) and [`AsyncLcdScreen`](`crate::ui::AsyncLcdScreen`) to use the [`heapless`] crate's
     /// containers. the `MAX_CAPACITY` generic specifies the size for *all* containers, so it must
-    /// be a power of 2 via [`heapless::index_set::FnvIndexSet`]'s constraints on its capacity.
+    /// be a power of 2 due to [`FnvIndexSet`](`heapless::index_set::FnvIndexSet`)'s constraints on its capacity.
     pub struct HeaplessStorage<const MAX_CAPACITY: usize>;
     impl<const MAX_CAPACITY: usize> Storage for HeaplessStorage<MAX_CAPACITY> {
         type Text = heapless::vec::Vec<u8, MAX_CAPACITY>;

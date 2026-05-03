@@ -14,7 +14,7 @@ pub enum Transition<S: TextContainer> {
         /// How long (in frames) the transition will take.
         duration: u8,
     },
-    /// Moves the element from it's one position to another position.
+    /// Moves the element from one position to another position.
     MoveToExt {
         /// Old position.
         old: ScreenCoordinates,
@@ -28,7 +28,7 @@ pub enum Transition<S: TextContainer> {
         /// How many frames to idle for.
         duration: u8,
     },
-    /// Changes to another [`crate::ui::widget::WidgetContent`].
+    /// Changes to another [`WidgetContent`](`crate::ui::widget::WidgetContent`).
     ChangeTo(WidgetContent<S>),
     /// Hides the widget.
     Hide,

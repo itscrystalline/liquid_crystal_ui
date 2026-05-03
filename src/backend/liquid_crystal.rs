@@ -1,14 +1,14 @@
-//! Provides a sync and async implementation of [`crate::backend::LcdBackend`]
-//! and [`crate::backend::AsyncLcdBackend`] for the [`liquid_crystal::LiquidCrystal`]
+//! Provides a sync and async implementation of [`LcdBackend`](`crate::backend::LcdBackend`)
+//! and [`AsyncLcdBackend`](`crate::backend::AsyncLcdBackend`) for the [`liquid_crystal`](`liquid_crystal::LiquidCrystal`) crate's provided
 //! screen driver.
 //!
 //! You can also use this module as a reference for implementing the backend traits on your own drivers.
 
 use core::convert::Infallible;
 
-pub use embedded_hal::delay::DelayNs as Delay;
+use embedded_hal::delay::DelayNs as Delay;
 #[cfg(feature = "async")]
-pub use embedded_hal_async::delay::DelayNs as ADelay;
+use embedded_hal_async::delay::DelayNs as ADelay;
 
 use liquid_crystal::{Command, Commands::Clear, LiquidCrystal, SendType::CustomChar};
 

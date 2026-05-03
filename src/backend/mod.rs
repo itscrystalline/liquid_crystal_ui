@@ -10,9 +10,9 @@ use crate::ScreenCoordinates;
 #[cfg(feature = "liquid_crystal_driver")]
 pub mod liquid_crystal;
 
-pub use embedded_hal::delay::DelayNs as Delay;
+use embedded_hal::delay::DelayNs as Delay;
 #[cfg(feature = "async")]
-pub use embedded_hal_async::delay::DelayNs as ADelay;
+use embedded_hal_async::delay::DelayNs as ADelay;
 
 /// Marker trait for errors that can be generated from a LCD backend.
 pub trait BackendError: Debug + Display {}

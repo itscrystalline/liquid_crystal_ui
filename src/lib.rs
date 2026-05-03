@@ -4,6 +4,7 @@
 
 #![no_std]
 #![warn(missing_docs)]
+#![feature(doc_cfg)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
