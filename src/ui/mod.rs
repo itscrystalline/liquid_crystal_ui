@@ -44,6 +44,7 @@ use crate::{
     ScreenCoordinates,
     backend::{AsyncLcdBackend, BackendError},
     error::UiError,
+    storage::TextContainer,
     ui::{
         transition::Transition,
         widget::{CustomCharacterRef, WidgetContent},
@@ -51,6 +52,7 @@ use crate::{
 };
 use crate::{
     backend::LcdBackend,
+    error::StorageError,
     storage::{QueueContainer, SetContainer, StackContainer, Storage},
     ui::widget::Widget,
 };
@@ -60,8 +62,6 @@ pub use embedded_hal::delay::DelayNs as Delay;
 pub use embedded_hal_async::delay::DelayNs as ADelay;
 
 type IdWidget<S> = (u32, Widget<S>);
-type StackError<S, T> = <<S as Storage>::Vec<T> as StackContainer<T>>::Error;
-type QueueError<S, T> = <<S as Storage>::Queue<T> as QueueContainer<T>>::Error;
 
 #[derive(Debug)]
 struct ScreenMetadata<const CUSTOM_CHARACTER_SLOTS: usize, S: Storage> {
@@ -100,7 +100,7 @@ impl<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS: usize, S: Storage>
         content: WidgetContent<S::Text>,
         pos: ScreenCoordinates,
         hidden: bool,
-    ) -> Result<u32, StackError<S, IdWidget<S>>> {
+    ) -> Result<u32, StorageError> {
         let id = self.advance_id();
         let screen_state = &mut self.meta;
         screen_state.elems.push((
@@ -138,7 +138,7 @@ impl<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS: usize, S: Storage>
         &mut self,
         key: u32,
         transition: Transition<S::Text>,
-    ) -> Result<(), QueueError<S, Transition<S::Text>>> {
+    ) -> Result<(), StorageError> {
         let found = self.meta.elems.iter_mut().find(|(id, _)| *id == key);
         if let Some((_, elem)) = found {
             elem.transitions.enqueue(transition)?;
@@ -169,13 +169,12 @@ impl<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS: usize, S: Storage>
                                 core::mem::swap(&mut elem.content, new);
                                 elem.transitions.dequeue();
                             }
-                            Some(&mut Transition::MoveTo { new, duration }) => {
+                            Some(old_trans@ &mut Transition::MoveTo { new, duration }) => {
                                 let old = elem.pos;
                                 _ = elem.transition_progress.insert(1);
                                 debug!("Resolving move transition to {new:?}");
-                                elem.transitions.dequeue();
-                                elem.transitions
-                                    .enqueue(Transition::MoveToExt { old, new, duration }).expect("should not fill up after popping one out");
+                                let mut new_trans= Transition::MoveToExt { old, new, duration };
+                                core::mem::swap(old_trans, &mut new_trans);
                             }
                             Some(&mut Transition::MoveToExt { old, new, duration }) => {
                                 let progress = elem.transition_progress.get_or_insert(0);
@@ -219,7 +218,7 @@ pub struct LcdScreen<
     const CHAR_HEIGHT: usize,
     const CUSTOM_CHARACTER_SLOTS: usize,
     S: Storage,
-    D: LcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S::Text>,
+    D: LcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS>,
     Y: Delay,
 > {
     core: LcdScreenCore<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S>,
@@ -233,7 +232,7 @@ pub struct AsyncLcdScreen<
     const CHAR_HEIGHT: usize,
     const CUSTOM_CHARACTER_SLOTS: usize,
     S: Storage,
-    D: AsyncLcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S::Text>,
+    D: AsyncLcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS>,
     Y: ADelay,
 > {
     core: LcdScreenCore<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S>,
@@ -245,7 +244,7 @@ impl<
     const CHAR_HEIGHT: usize,
     const CUSTOM_CHARACTER_SLOTS: usize,
     S: Storage,
-    D: LcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S::Text>,
+    D: LcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS>,
     Y: Delay,
 > LcdScreen<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S, D, Y>
 {
@@ -270,7 +269,7 @@ impl<
         content: WidgetContent<S::Text>,
         pos: ScreenCoordinates,
         hidden: bool,
-    ) -> Result<u32, StackError<S, IdWidget<S>>> {
+    ) -> Result<u32, StorageError> {
         self.core.new_elem(content, pos, hidden)
     }
 
@@ -325,7 +324,7 @@ impl<
         &mut self,
         key: u32,
         transition: Transition<S::Text>,
-    ) -> Result<&mut Self, QueueError<S, Transition<S::Text>>> {
+    ) -> Result<&mut Self, StorageError> {
         self.core.queue_transition(key, transition)?;
         Ok(self)
     }
@@ -333,14 +332,7 @@ impl<
     /// Ticks the UI and all of its widgets, then draws the current UI state to the screen.
     pub fn draw(&mut self) -> Result<(), UiError<D::Error>>
     where
-        <S::Queue<Transition<S::Text>> as QueueContainer<Transition<S::Text>>>::Error: Debug,
-        <D as LcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, <S as Storage>::Text>>::Error:
-            BackendError,
-        UiError<
-            <D as LcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, <S as Storage>::Text>>::Error,
-        >: From<
-            <<S as Storage>::Vec<ScreenCoordinates> as StackContainer<ScreenCoordinates>>::Error,
-        >,
+        <D as LcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS>>::Error: BackendError,
     {
         self.core.tick();
 
@@ -351,7 +343,7 @@ impl<
                 self.lcd.move_cursor(delay, elem.pos)?;
                 match &elem.content {
                     WidgetContent::Text(ascii_string) => {
-                        self.lcd.write_str(delay, ascii_string)?;
+                        self.lcd.write_str(delay, ascii_string.chars())?;
                         drawn_this_frame.extend(
                             (elem.pos.x()..(elem.pos.x() + ascii_string.len() as u8))
                                 .map(|x| ScreenCoordinates::at(x, elem.pos.y())),
@@ -393,7 +385,7 @@ impl<
     const CHAR_HEIGHT: usize,
     const CUSTOM_CHARACTER_SLOTS: usize,
     S: Storage,
-    D: AsyncLcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S::Text>,
+    D: AsyncLcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS>,
     Y: ADelay,
 > AsyncLcdScreen<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S, D, Y>
 {
@@ -420,7 +412,7 @@ impl<
         content: WidgetContent<S::Text>,
         pos: ScreenCoordinates,
         hidden: bool,
-    ) -> Result<u32, StackError<S, IdWidget<S>>> {
+    ) -> Result<u32, StorageError> {
         self.core.new_elem(content, pos, hidden)
     }
 
@@ -478,7 +470,7 @@ impl<
         &mut self,
         key: u32,
         transition: Transition<S::Text>,
-    ) -> Result<&mut Self, QueueError<S, Transition<S::Text>>> {
+    ) -> Result<&mut Self, StorageError> {
         self.core.queue_transition(key, transition)?;
         Ok(self)
     }
@@ -486,16 +478,7 @@ impl<
     /// Ticks the UI and all of its widgets, then draws the current UI state to the screen.
     pub async fn draw(&mut self) -> Result<(), UiError<D::Error>>
     where
-        <S::Queue<Transition<S::Text>> as QueueContainer<Transition<S::Text>>>::Error: Debug,
-        <D as AsyncLcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, <S as Storage>::Text>>::Error:
-            BackendError,
-        UiError<
-            <D as AsyncLcdBackend<
-                CHAR_HEIGHT,
-                CUSTOM_CHARACTER_SLOTS,
-                <S as Storage>::Text,
-            >>::Error,
-        >: From<<<S as Storage>::Vec<ScreenCoordinates> as StackContainer<ScreenCoordinates>>::Error>
+        <D as AsyncLcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS>>::Error: BackendError,
     {
         self.core.tick();
 
@@ -506,7 +489,7 @@ impl<
                 self.lcd.move_cursor(delay, elem.pos).await?;
                 match &elem.content {
                     WidgetContent::Text(ascii_string) => {
-                        self.lcd.write_str(delay, ascii_string).await?;
+                        self.lcd.write_str(delay, ascii_string.chars()).await?;
                         drawn_this_frame.extend(
                             (elem.pos.x()..(elem.pos.x() + ascii_string.len() as u8))
                                 .map(|x| ScreenCoordinates::at(x, elem.pos.y())),

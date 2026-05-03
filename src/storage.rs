@@ -1,4 +1,6 @@
 //! Storage adapters.
+use crate::error::StorageError;
+use core::fmt::Debug;
 use core::hash::Hash;
 
 /// Trait describing a family of storage containers to use.
@@ -20,9 +22,9 @@ pub trait TextContainer: StackContainer<u8> + Debug {
         StackContainer::is_empty(self)
     }
     /// Adds the ASCII byte `c` to the container.
-    fn push_ascii(&mut self, c: u8) -> Result<(), Self::Error>;
+    fn push_ascii(&mut self, c: u8) -> Result<(), StorageError>;
     /// Adds the ASCII bytes in `iter` to the container.
-    fn push_ascii_iter(&mut self, iter: impl IntoIterator<Item = u8>) -> Result<(), Self::Error> {
+    fn push_ascii_iter(&mut self, iter: impl IntoIterator<Item = u8>) -> Result<(), StorageError> {
         for c in iter {
             self.push_ascii(c)?;
         }
@@ -32,7 +34,7 @@ pub trait TextContainer: StackContainer<u8> + Debug {
     fn chars(&self) -> impl Iterator<Item = u8>;
 
     /// Converts an `&str` to a TextContainer.
-    fn from_str(s: &str) -> Result<Self, Self::Error> {
+    fn from_str(s: &str) -> Result<Self, StorageError> {
         let mut new = Self::new();
         new.push_ascii_iter(s.bytes())?;
         Ok(new)
@@ -40,9 +42,6 @@ pub trait TextContainer: StackContainer<u8> + Debug {
 }
 /// Trait abstracting queues.
 pub trait QueueContainer<C>: IntoIterator<Item = C> + Sized + Default + Extend<C> {
-    /// The error type this container may emit.
-    type Error: Debug + Display;
-
     /// Creates an empty container.
     fn new() -> Self;
     /// The length of the queue.
@@ -52,7 +51,7 @@ pub trait QueueContainer<C>: IntoIterator<Item = C> + Sized + Default + Extend<C
         self.len() == 0
     }
     /// Enqueues an element onto the end of this queue.
-    fn enqueue(&mut self, elem: C) -> Result<(), Self::Error>;
+    fn enqueue(&mut self, elem: C) -> Result<(), StorageError>;
     /// Dequeues an element off the front of this queue if there are things in the queue, returning it.
     fn dequeue(&mut self) -> Option<C>;
     /// Inspects the front of the queue, without dequeueing it.
@@ -64,9 +63,6 @@ pub trait QueueContainer<C>: IntoIterator<Item = C> + Sized + Default + Extend<C
 pub trait StackContainer<C>:
     FromIterator<C> + IntoIterator<Item = C> + Sized + Default + Extend<C>
 {
-    /// The error type this satck may emit.
-    type Error: Debug + Display;
-
     /// Creates an empty container.
     fn new() -> Self;
     /// The length of the stack.
@@ -76,7 +72,7 @@ pub trait StackContainer<C>:
         self.len() == 0
     }
     /// Pushes an element onto this stack.
-    fn push(&mut self, elem: C) -> Result<(), Self::Error>;
+    fn push(&mut self, elem: C) -> Result<(), StorageError>;
     /// Pops an element off this stack if there are things in the stack, returning it.
     fn pop(&mut self) -> Option<C>;
     /// Drains all the elements off the stack, starting from the bottom.
@@ -97,9 +93,6 @@ pub trait StackContainer<C>:
 
 /// Trait abstracting sets.
 pub trait SetContainer<C>: Sized + Default + Extend<C> {
-    /// The error type this set may emit.
-    type Error: Debug + Display;
-
     /// Creates an empty set.
     fn new() -> Self;
     /// Iterator over the set.
@@ -112,8 +105,8 @@ pub trait SetContainer<C>: Sized + Default + Extend<C> {
 mod alloc_impl {
     use alloc::collections::btree_set::BTreeSet;
 
+    use crate::error::StorageError;
     use crate::storage::{QueueContainer, SetContainer, StackContainer, Storage, TextContainer};
-    use core::convert::Infallible;
     use core::hash::Hash;
 
     /// Tells [`crate::ui::LcdScreen`] and [`crate::ui::AsyncLcdScreen`] to use the `alloc` crate's
@@ -127,7 +120,7 @@ mod alloc_impl {
     }
 
     impl TextContainer for alloc::vec::Vec<u8> {
-        fn push_ascii(&mut self, c: u8) -> Result<(), Self::Error> {
+        fn push_ascii(&mut self, c: u8) -> Result<(), StorageError> {
             self.push(c);
             Ok(())
         }
@@ -137,8 +130,6 @@ mod alloc_impl {
         }
     }
     impl<T> StackContainer<T> for alloc::vec::Vec<T> {
-        type Error = Infallible;
-
         fn new() -> Self {
             alloc::vec::Vec::new()
         }
@@ -147,7 +138,7 @@ mod alloc_impl {
             self.len()
         }
 
-        fn push(&mut self, elem: T) -> Result<(), Self::Error> {
+        fn push(&mut self, elem: T) -> Result<(), StorageError> {
             self.push(elem);
             Ok(())
         }
@@ -182,8 +173,6 @@ mod alloc_impl {
         }
     }
     impl<T> QueueContainer<T> for alloc::collections::vec_deque::VecDeque<T> {
-        type Error = Infallible;
-
         fn new() -> Self {
             alloc::collections::vec_deque::VecDeque::new()
         }
@@ -192,7 +181,7 @@ mod alloc_impl {
             self.len()
         }
 
-        fn enqueue(&mut self, elem: T) -> Result<(), Self::Error> {
+        fn enqueue(&mut self, elem: T) -> Result<(), StorageError> {
             self.push_back(elem);
             Ok(())
         }
@@ -210,8 +199,6 @@ mod alloc_impl {
         }
     }
     impl<T: Ord + Hash> SetContainer<T> for alloc::collections::BTreeSet<T> {
-        type Error = Infallible;
-
         fn new() -> Self {
             BTreeSet::new()
         }
@@ -246,7 +233,7 @@ mod heapless_impl {
     }
 
     impl<const S: usize> TextContainer for heapless::vec::Vec<u8, S> {
-        fn push_ascii(&mut self, c: u8) -> Result<(), Self::Error> {
+        fn push_ascii(&mut self, c: u8) -> Result<(), StorageError> {
             if self.push(c).is_err() {
                 Err(StorageError::NotEnoughStorage)
             } else {
@@ -259,13 +246,11 @@ mod heapless_impl {
         }
     }
     impl<const S: usize, T> StackContainer<T> for heapless::vec::Vec<T, S> {
-        type Error = StorageError;
-
         fn len(&self) -> usize {
             self.as_slice().len()
         }
 
-        fn push(&mut self, elem: T) -> Result<(), Self::Error> {
+        fn push(&mut self, elem: T) -> Result<(), StorageError> {
             if self.push(elem).is_err() {
                 Err(StorageError::NotEnoughStorage)
             } else {
@@ -307,13 +292,11 @@ mod heapless_impl {
         }
     }
     impl<const N: usize, T> QueueContainer<T> for heapless::deque::Deque<T, N> {
-        type Error = StorageError;
-
         fn len(&self) -> usize {
             self.len()
         }
 
-        fn enqueue(&mut self, elem: T) -> Result<(), Self::Error> {
+        fn enqueue(&mut self, elem: T) -> Result<(), StorageError> {
             if self.push_back(elem).is_err() {
                 Err(StorageError::NotEnoughStorage)
             } else {
@@ -338,8 +321,6 @@ mod heapless_impl {
         }
     }
     impl<const N: usize, T: Ord + Hash> SetContainer<T> for heapless::index_set::FnvIndexSet<T, N> {
-        type Error = StorageError;
-
         fn new() -> Self {
             FnvIndexSet::new()
         }
@@ -352,8 +333,6 @@ mod heapless_impl {
         }
     }
 }
-
-use core::fmt::{Debug, Display};
 
 #[cfg(feature = "alloc")]
 pub use alloc_impl::*;

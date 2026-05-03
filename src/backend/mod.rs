@@ -9,7 +9,6 @@ use core::convert::Infallible;
 use core::fmt::{Debug, Display};
 
 use crate::ScreenCoordinates;
-use crate::storage::TextContainer;
 
 #[cfg(feature = "liquid_crystal_driver")]
 pub mod liquid_crystal;
@@ -25,12 +24,7 @@ impl BackendError for Infallible {}
 #[cfg(feature = "async")]
 #[allow(async_fn_in_trait)]
 /// The Asynchronous Backend trait for `async` drivers.
-pub trait AsyncLcdBackend<
-    const CHAR_HEIGHT: usize,
-    const CUSTOM_CHARACTER_SLOTS: usize,
-    T: TextContainer,
->
-{
+pub trait AsyncLcdBackend<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS: usize> {
     /// The error type that is emitted by the driver. If the driver doesn't fail, you can use
     /// [`core::convert::Infallible`] or the `!` (never) type.
     type Error: BackendError;
@@ -71,9 +65,9 @@ pub trait AsyncLcdBackend<
     async fn write_str(
         &mut self,
         delay: &mut impl ADelay,
-        s: &T,
+        s: impl IntoIterator<Item = u8>,
     ) -> Result<&mut Self, Self::Error> {
-        for ch in s.chars() {
+        for ch in s.into_iter() {
             self.write_byte(delay, ch).await?;
         }
         Ok(self)
@@ -81,12 +75,7 @@ pub trait AsyncLcdBackend<
 }
 
 /// The Synchronous Backend trait for blocking drivers.
-pub trait LcdBackend<
-    const CHAR_HEIGHT: usize,
-    const CUSTOM_CHARACTER_SLOTS: usize,
-    T: TextContainer,
->
-{
+pub trait LcdBackend<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS: usize> {
     /// The error type that is emitted by the driver. If the driver doesn't fail, you can use
     /// [`core::convert::Infallible`] or the `!` (never) type.
     type Error: BackendError;
@@ -120,8 +109,12 @@ pub trait LcdBackend<
     ) -> Result<&mut Self, Self::Error>;
 
     /// Writes a string of ASCII characters to the screen.
-    fn write_str(&mut self, delay: &mut impl Delay, s: &T) -> Result<&mut Self, Self::Error> {
-        for ch in s.chars() {
+    fn write_str(
+        &mut self,
+        delay: &mut impl Delay,
+        s: impl IntoIterator<Item = u8>,
+    ) -> Result<&mut Self, Self::Error> {
+        for ch in s.into_iter() {
             self.write_byte(delay, ch)?;
         }
         Ok(self)

@@ -14,10 +14,10 @@ use liquid_crystal::{Command, Commands::Clear, LiquidCrystal, SendType::CustomCh
 
 #[cfg(feature = "async")]
 use crate::backend::AsyncLcdBackend;
-use crate::{backend::LcdBackend, storage::TextContainer};
+use crate::backend::LcdBackend;
 
-impl<T: liquid_crystal::Interface, S: TextContainer, const COLS: u8, const LINES: usize>
-    LcdBackend<8, 8, S> for LiquidCrystal<'_, T, COLS, LINES, liquid_crystal::Blocking>
+impl<T: liquid_crystal::Interface, const COLS: u8, const LINES: usize> LcdBackend<8, 8>
+    for LiquidCrystal<'_, T, COLS, LINES, liquid_crystal::Blocking>
 {
     /// The driver doesn't return errors, so no errors can happen in the driver
     type Error = Infallible;
@@ -90,8 +90,8 @@ impl<T: liquid_crystal::Interface, S: TextContainer, const COLS: u8, const LINES
 }
 
 #[cfg(feature = "async")]
-impl<T: liquid_crystal::Interface, S: TextContainer, const COLS: u8, const LINES: usize>
-    AsyncLcdBackend<8, 8, S> for LiquidCrystal<'_, T, COLS, LINES, liquid_crystal::Async>
+impl<T: liquid_crystal::Interface, const COLS: u8, const LINES: usize> AsyncLcdBackend<8, 8>
+    for LiquidCrystal<'_, T, COLS, LINES, liquid_crystal::Async>
 {
     /// The driver doesn't return errors, so no errors can happen in the driver
     type Error = Infallible;

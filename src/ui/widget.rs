@@ -2,6 +2,7 @@
 
 use crate::{
     ScreenCoordinates,
+    error::StorageError,
     storage::{Storage, TextContainer},
     ui::transition::Transition,
 };
@@ -31,7 +32,7 @@ pub enum WidgetContent<S: TextContainer> {
 
 impl<S: TextContainer> WidgetContent<S> {
     /// Shorthand for creating a [`ScreenContent::Text`] from an `&str`.
-    pub fn text(c: &str) -> Result<Self, S::Error> {
+    pub fn text(c: &str) -> Result<Self, StorageError> {
         Ok(WidgetContent::Text(S::from_str(c)?))
     }
 }
