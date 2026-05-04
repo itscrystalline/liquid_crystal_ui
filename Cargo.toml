@@ -5,7 +5,7 @@ edition = "2024"
 authors = ["itscrystalline <real@iw2tryhard.dev>"]
 description = "An embedded UI library for displaying to alphanumeric LCD displays."
 license = "MIT"
-repository = "https://github.com/RecursiveError/liquid_crystal"
+repository = "https://git.iw2tryhard.dev/itscrystalline/liquid_crystal_ui"
 keywords = ["lcd", "liquidcrystal", "HD44780", "embedded-hal", "tui"]
 categories = ["embedded", "no-std"]
 
