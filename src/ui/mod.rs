@@ -59,31 +59,28 @@ use embedded_hal_async::delay::DelayNs as ADelay;
 type IdWidget<S> = (u32, Widget<S>);
 
 #[derive(Debug)]
-struct ScreenMetadata<const CUSTOM_CHARACTER_SLOTS: usize, S: Storage> {
-    elems: S::Vec<IdWidget<S>>,
+struct ScreenMetadata<const CHAR_HEIGHT: usize, S: Storage> {
+    widgets: S::Vec<IdWidget<S>>,
     last_frame_drawn: S::Set<ScreenCoordinates>,
-    custom_characters: [Option<u32>; CUSTOM_CHARACTER_SLOTS], // idx -> screen character slot, u32 -> character id
+    registered_custom_chars: S::Vec<(u32, [u8; CHAR_HEIGHT])>,
 }
-impl<const CUSTOM_CHARACTER_SLOTS: usize, S: Storage> Default
-    for ScreenMetadata<CUSTOM_CHARACTER_SLOTS, S>
-{
+impl<const CHAR_HEIGHT: usize, S: Storage> Default for ScreenMetadata<CHAR_HEIGHT, S> {
     fn default() -> Self {
         Self {
-            elems: Default::default(),
+            widgets: Default::default(),
             last_frame_drawn: Default::default(),
-            custom_characters: [None; CUSTOM_CHARACTER_SLOTS],
+            registered_custom_chars: Default::default(),
         }
     }
 }
 
-struct LcdScreenCore<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS: usize, S: Storage> {
-    meta: ScreenMetadata<CUSTOM_CHARACTER_SLOTS, S>,
+struct LcdScreenCore<const CHAR_HEIGHT: usize, S: Storage> {
+    meta: ScreenMetadata<CHAR_HEIGHT, S>,
+    required_custom_chars: Result<S::Vec<CustomCharacterRef>, S::Vec<CustomCharacterRef>>,
     id_counter: u32,
 }
 
-impl<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS: usize, S: Storage>
-    LcdScreenCore<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S>
-{
+impl<const CHAR_HEIGHT: usize, S: Storage> LcdScreenCore<CHAR_HEIGHT, S> {
     fn advance_id(&mut self) -> u32 {
         let id = self.id_counter;
         self.id_counter = self.id_counter.wrapping_add(1);
@@ -98,7 +95,7 @@ impl<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS: usize, S: Storage>
     ) -> Result<u32, StorageError> {
         let id = self.advance_id();
         let screen_state = &mut self.meta;
-        screen_state.elems.push((
+        screen_state.widgets.push((
             id,
             Widget {
                 content,
@@ -111,22 +108,46 @@ impl<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS: usize, S: Storage>
         Ok(id)
     }
 
-    fn free_slot_mut(&mut self) -> Option<(usize, &mut Option<u32>)> {
-        self.meta
-            .custom_characters
-            .iter_mut()
-            .enumerate()
-            .find(|(_, x)| x.is_none())
-    }
-    fn find_slot_mut(
+    fn register_custom_char(
         &mut self,
-        custom_char: CustomCharacterRef,
-    ) -> Option<(usize, &mut Option<u32>)> {
-        self.meta
-            .custom_characters
+        bitmap: [u8; CHAR_HEIGHT],
+    ) -> Result<CustomCharacterRef, StorageError> {
+        let id = self.advance_id();
+        self.meta.registered_custom_chars.push((id, bitmap))?;
+        Ok(CustomCharacterRef(id))
+    }
+    fn unregister_custom_char(
+        &mut self,
+        character: CustomCharacterRef,
+    ) -> Option<[u8; CHAR_HEIGHT]> {
+        let char = self
+            .meta
+            .registered_custom_chars
+            .iter()
+            .enumerate()
+            .find(|(_, (id, _))| *id == character.0);
+        if let Some((idx, (_, elem))) = char {
+            let ret = Some(*elem);
+            self.meta.registered_custom_chars.remove(idx);
+            ret
+        } else {
+            None
+        }
+    }
+    fn reregister_custom_char(
+        &mut self,
+        character: CustomCharacterRef,
+        new_bitmap: [u8; CHAR_HEIGHT],
+    ) {
+        let char = self
+            .meta
+            .registered_custom_chars
             .iter_mut()
             .enumerate()
-            .find(|(_, slot)| slot.is_some_and(|id| id == custom_char.0))
+            .find(|(_, (id, _))| *id == character.0);
+        if let Some((_, (_, old_bitmap))) = char {
+            *old_bitmap = new_bitmap;
+        }
     }
 
     fn queue_transition(
@@ -134,7 +155,7 @@ impl<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS: usize, S: Storage>
         key: u32,
         transition: Transition<S::Text>,
     ) -> Result<(), StorageError> {
-        let found = self.meta.elems.iter_mut().find(|(id, _)| *id == key);
+        let found = self.meta.widgets.iter_mut().find(|(id, _)| *id == key);
         if let Some((_, elem)) = found {
             elem.transitions.enqueue(transition)?;
         } else {
@@ -145,7 +166,8 @@ impl<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS: usize, S: Storage>
     }
 
     fn tick(&mut self) {
-        self.meta.elems = self.meta.elems
+        let mut needs_update = false;
+        self.meta.widgets = self.meta.widgets
             .drain_all()
             .filter_map(|(id, mut elem)| {
                 match elem.transitions.peek_mut() {
@@ -155,18 +177,21 @@ impl<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS: usize, S: Storage>
                             Some(Transition::Hide) => {
                                 elem.hidden = true;
                                 elem.transitions.dequeue();
+                                needs_update &= matches!(elem.content, WidgetContent::CustomCharacter(_));
                             },
                             Some(Transition::Show) => {
                                 elem.hidden = false;
                                 elem.transitions.dequeue();
+                                needs_update &= matches!(elem.content, WidgetContent::CustomCharacter(_));
                             },
                             Some(Transition::ChangeTo(new)) => {
                                 #[cfg(feature = "log")]
                                 debug!("Transitioning {:?} into {new:?}", elem.content);
+                                needs_update &= matches!(new, WidgetContent::CustomCharacter(_));
                                 core::mem::swap(&mut elem.content, new);
                                 elem.transitions.dequeue();
                             }
-                            Some(old_trans@ &mut Transition::MoveTo { new, duration }) => {
+                            Some(old_trans @ &mut Transition::MoveTo { new, duration }) => {
                                 let old = elem.pos;
                                 _ = elem.transition_progress.insert(1);
                                 #[cfg(feature = "log")]
@@ -209,16 +234,21 @@ impl<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS: usize, S: Storage>
                 }
             })
             .collect();
+        if needs_update {
+            self.update_required_custom_chars();
+        }
     }
 
-    fn addr_of_character(&self, id: u32) -> Option<u8> {
-        self.meta
-            .custom_characters
-            .iter()
-            .enumerate()
-            .filter(|(_, i)| i.is_some_and(|i| i == id))
-            .next()
-            .map(|(idx, _)| idx as u8)
+    fn update_required_custom_chars(&mut self) {
+        let mut used = S::Vec::new();
+        let mut full = false;
+        for (_, widget) in self.meta.widgets.iter() {
+            if let WidgetContent::CustomCharacter(id) = widget.content {
+                full &= used.push(id).is_err();
+            }
+        }
+
+        self.required_custom_chars = if full { Err(used) } else { Ok(used) }
     }
 }
 
@@ -238,7 +268,8 @@ pub struct LcdScreen<
     D: LcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS>,
     Y: Delay,
 > {
-    core: LcdScreenCore<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S>,
+    core: LcdScreenCore<CHAR_HEIGHT, S>,
+    screen_custom_chars: [Option<u32>; CUSTOM_CHARACTER_SLOTS], // idx -> screen character slot, u32 -> character id
     lcd: D,
     delay: Y,
 }
@@ -260,7 +291,8 @@ pub struct AsyncLcdScreen<
     D: AsyncLcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS>,
     Y: ADelay,
 > {
-    core: LcdScreenCore<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS, S>,
+    core: LcdScreenCore<CHAR_HEIGHT, S>,
+    screen_custom_chars: [Option<u32>; CUSTOM_CHARACTER_SLOTS], // idx -> screen character slot, u32 -> character id
     lcd: D,
     delay: Y,
 }
@@ -281,11 +313,21 @@ impl<
         Ok(LcdScreen {
             core: LcdScreenCore {
                 meta: ScreenMetadata::default(),
+                required_custom_chars: Ok(S::Vec::default()),
                 id_counter: 0,
             },
+            screen_custom_chars: [None; CUSTOM_CHARACTER_SLOTS],
             lcd,
             delay,
         })
+    }
+
+    fn addr_of_character(&self, id: u32) -> Option<u8> {
+        self.screen_custom_chars
+            .iter()
+            .enumerate()
+            .find(|(_, i)| i.is_some_and(|i| i == id))
+            .map(|(idx, _)| idx as u8)
     }
 
     /// Creates a new widget on the screen.
@@ -298,49 +340,27 @@ impl<
         self.core.new_elem(content, pos, hidden)
     }
 
-    /// Registers a custom character for use with the screen. You can use [`macro@bitmap`] to
-    /// create a character. Returns `None` if there is no free custom character slots left.
+    /// Registers a custom character for use with the screen.
     pub fn register_custom_char(
         &mut self,
         bitmap: [u8; CHAR_HEIGHT],
-    ) -> Result<Option<CustomCharacterRef>, D::Error> {
-        let id = self.core.advance_id();
-        if let Some((idx, slot)) = self.core.free_slot_mut() {
-            self.lcd
-                .set_custom_character_at(&mut self.delay, idx as u8, bitmap)?;
-            Ok(Some(CustomCharacterRef(*slot.insert(id))))
-        } else {
-            Ok(None)
-        }
+    ) -> Result<CustomCharacterRef, StorageError> {
+        self.core.register_custom_char(bitmap)
     }
-
-    /// Unregisters an existing custom character.
+    /// Removes a registration of a custom character.
     pub fn unregister_custom_char(
         &mut self,
         character: CustomCharacterRef,
-    ) -> Result<(), D::Error> {
-        if let Some((idx, slot)) = self.core.find_slot_mut(character) {
-            self.lcd
-                .set_custom_character_at(&mut self.delay, idx as u8, [0u8; CHAR_HEIGHT])?;
-            *slot = None;
-        }
-        Ok(())
+    ) -> Option<[u8; CHAR_HEIGHT]> {
+        self.core.unregister_custom_char(character)
     }
-    /// changes an existing custom character to a new bitmap, preserves its ID.
+    /// Changes an existing custom character.
     pub fn reregister_custom_char(
         &mut self,
-        old_character: CustomCharacterRef,
-        new: [u8; CHAR_HEIGHT],
-    ) -> Result<Option<CustomCharacterRef>, D::Error> {
-        let id = self.core.advance_id();
-
-        if let Some((idx, slot)) = self.core.find_slot_mut(old_character) {
-            self.lcd
-                .set_custom_character_at(&mut self.delay, idx as u8, new)?;
-            Ok(Some(CustomCharacterRef(*slot.insert(id))))
-        } else {
-            Ok(None)
-        }
+        character: CustomCharacterRef,
+        new_bitmap: [u8; CHAR_HEIGHT],
+    ) {
+        self.core.reregister_custom_char(character, new_bitmap)
     }
 
     /// Queues a transition to run on the widget with the key `key`. The transitions will run
@@ -359,24 +379,49 @@ impl<
     where
         <D as LcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS>>::Error: BackendError,
     {
+        let mut ret = Ok(());
+
         self.core.tick();
 
-        let delay = &mut self.delay;
+        let needed_custom_chars = match &self.core.required_custom_chars {
+            Ok(r) => r,
+            Err(r) => {
+                #[cfg(feature = "log")]
+                error!("Not enough storage to store full list of custom characters!");
+                ret = Err(UiError::InsufficentCharacterStorage);
+                r
+            }
+        };
+        let mut counter = 0u8;
+        for regis_char in self.core.meta.registered_custom_chars.iter() {
+            if let Some(&CustomCharacterRef(id)) = needed_custom_chars
+                .iter()
+                .find(|CustomCharacterRef(id)| *id == regis_char.0)
+                && (counter as usize) < CUSTOM_CHARACTER_SLOTS
+                && self.screen_custom_chars[counter as usize].is_none_or(|curr| curr != id)
+            {
+                self.lcd
+                    .set_custom_character_at(&mut self.delay, counter, regis_char.1)?;
+                _ = self.screen_custom_chars[counter as usize].insert(regis_char.0);
+                counter += 1;
+            }
+        }
+
         let mut drawn_this_frame = S::Vec::new();
-        for (_, elem) in self.core.meta.elems.iter() {
+        for (_, elem) in self.core.meta.widgets.iter() {
             if !elem.hidden {
-                self.lcd.move_cursor(delay, elem.pos)?;
+                self.lcd.move_cursor(&mut self.delay, elem.pos)?;
                 match &elem.content {
                     WidgetContent::Text(ascii_string) => {
-                        self.lcd.write_str(delay, ascii_string.chars())?;
+                        self.lcd.write_str(&mut self.delay, ascii_string.chars())?;
                         drawn_this_frame.extend(
                             (elem.pos.x()..(elem.pos.x() + ascii_string.len() as u8))
                                 .map(|x| ScreenCoordinates::at(x, elem.pos.y())),
                         );
                     }
                     WidgetContent::CustomCharacter(CustomCharacterRef(id)) => {
-                        if let Some(idx) = self.core.addr_of_character(*id) {
-                            self.lcd.write_custom_character(delay, idx)?;
+                        if let Some(idx) = self.addr_of_character(*id) {
+                            self.lcd.write_custom_character(&mut self.delay, idx)?;
                             drawn_this_frame.push(elem.pos)?;
                         } else {
                             #[cfg(feature = "log")]
@@ -395,18 +440,17 @@ impl<
             .filter(|&x| !drawn_this_frame.contains(x))
         {
             self.lcd
-                .move_cursor(delay, *pixel)?
-                .write_byte(delay, b' ')?;
+                .move_cursor(&mut self.delay, *pixel)?
+                .write_byte(&mut self.delay, b' ')?;
         }
 
-        let drawn_this_frame = {
+        self.core.meta.last_frame_drawn = {
             let mut s = S::Set::new();
             s.extend(drawn_this_frame);
             s
         };
-        self.core.meta.last_frame_drawn = drawn_this_frame;
 
-        Ok(())
+        ret
     }
 }
 
@@ -429,11 +473,21 @@ impl<
         Ok(AsyncLcdScreen {
             core: LcdScreenCore {
                 meta: ScreenMetadata::default(),
+                required_custom_chars: Ok(S::Vec::default()),
                 id_counter: 0,
             },
+            screen_custom_chars: [None; CUSTOM_CHARACTER_SLOTS],
             lcd,
             delay,
         })
+    }
+
+    fn addr_of_character(&self, id: u32) -> Option<u8> {
+        self.screen_custom_chars
+            .iter()
+            .enumerate()
+            .find(|(_, i)| i.is_some_and(|i| i == id))
+            .map(|(idx, _)| idx as u8)
     }
 
     /// Creates a new widget on the screen.
@@ -444,54 +498,6 @@ impl<
         hidden: bool,
     ) -> Result<u32, StorageError> {
         self.core.new_elem(content, pos, hidden)
-    }
-
-    /// Registers a custom character for use with the screen. You can use [`macro@bitmap`] to
-    /// create a character. Returns `None` if there is no free custom character slots left.
-    pub async fn register_custom_char(
-        &mut self,
-        bitmap: [u8; CHAR_HEIGHT],
-    ) -> Result<Option<CustomCharacterRef>, D::Error> {
-        let id = self.core.advance_id();
-        if let Some((idx, slot)) = self.core.free_slot_mut() {
-            self.lcd
-                .set_custom_character_at(&mut self.delay, idx as u8, bitmap)
-                .await?;
-            Ok(Some(CustomCharacterRef(*slot.insert(id), idx)))
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Unregisters an existing custom character.
-    pub async fn unregister_custom_char(
-        &mut self,
-        character: CustomCharacterRef,
-    ) -> Result<(), D::Error> {
-        if let Some((idx, slot)) = self.core.find_slot_mut(character) {
-            self.lcd
-                .set_custom_character_at(&mut self.delay, idx as u8, [0u8; CHAR_HEIGHT])
-                .await?;
-            *slot = None;
-        }
-        Ok(())
-    }
-    /// changes an existing custom character to a new bitmap, preserves its ID.
-    pub async fn reregister_custom_char(
-        &mut self,
-        old_character: CustomCharacterRef,
-        new: [u8; CHAR_HEIGHT],
-    ) -> Result<Option<CustomCharacterRef>, D::Error> {
-        let id = self.core.advance_id();
-
-        if let Some((idx, slot)) = self.core.find_slot_mut(old_character) {
-            self.lcd
-                .set_custom_character_at(&mut self.delay, idx as u8, new)
-                .await?;
-            Ok(Some(CustomCharacterRef(*slot.insert(id), idx)))
-        } else {
-            Ok(None)
-        }
     }
 
     /// Queues a transition to run on the widget with the key `key`. The transitions will run
@@ -510,24 +516,59 @@ impl<
     where
         <D as AsyncLcdBackend<CHAR_HEIGHT, CUSTOM_CHARACTER_SLOTS>>::Error: BackendError,
     {
+        let mut ret = Ok(());
+
         self.core.tick();
 
-        let delay = &mut self.delay;
+        let needed_custom_chars = match &self.core.required_custom_chars {
+            Ok(r) => r,
+            Err(r) => {
+                #[cfg(feature = "log")]
+                error!("Not enough storage to store full list of custom characters!");
+                ret = Err(UiError::InsufficentCharacterStorage);
+                r
+            }
+        };
+        let mut counter = 0u8;
+        for regis_char in self.core.meta.registered_custom_chars.iter() {
+            if let Some(&CustomCharacterRef(id)) = needed_custom_chars
+                .iter()
+                .find(|CustomCharacterRef(id)| *id == regis_char.0)
+                && (counter as usize) < CUSTOM_CHARACTER_SLOTS
+                && self.screen_custom_chars[counter as usize].is_none_or(|curr| curr != id)
+            {
+                self.lcd
+                    .set_custom_character_at(&mut self.delay, counter, regis_char.1)
+                    .await?;
+                _ = self.screen_custom_chars[counter as usize].insert(regis_char.0);
+                counter += 1;
+            }
+        }
+
         let mut drawn_this_frame = S::Vec::new();
-        for (_, elem) in self.core.meta.elems.iter() {
+        for (_, elem) in self.core.meta.widgets.iter() {
             if !elem.hidden {
-                self.lcd.move_cursor(delay, elem.pos).await?;
+                self.lcd.move_cursor(&mut self.delay, elem.pos).await?;
                 match &elem.content {
                     WidgetContent::Text(ascii_string) => {
-                        self.lcd.write_str(delay, ascii_string.chars()).await?;
+                        self.lcd
+                            .write_str(&mut self.delay, ascii_string.chars())
+                            .await?;
                         drawn_this_frame.extend(
                             (elem.pos.x()..(elem.pos.x() + ascii_string.len() as u8))
                                 .map(|x| ScreenCoordinates::at(x, elem.pos.y())),
                         );
                     }
-                    WidgetContent::CustomCharacter(CustomCharacterRef(_, idx)) => {
-                        self.lcd.write_custom_character(delay, *idx as u8).await?;
-                        drawn_this_frame.push(elem.pos)?;
+                    WidgetContent::CustomCharacter(CustomCharacterRef(id)) => {
+                        if let Some(idx) = self.addr_of_character(*id) {
+                            self.lcd
+                                .write_custom_character(&mut self.delay, idx)
+                                .await?;
+                            drawn_this_frame.push(elem.pos)?;
+                        } else {
+                            #[cfg(feature = "log")]
+                            error!("No custom character with ID {id}!")
+                        }
                     }
                 }
             }
@@ -541,19 +582,18 @@ impl<
             .filter(|&x| !drawn_this_frame.contains(x))
         {
             self.lcd
-                .move_cursor(delay, *pixel)
+                .move_cursor(&mut self.delay, *pixel)
                 .await?
-                .write_byte(delay, b' ')
+                .write_byte(&mut self.delay, b' ')
                 .await?;
         }
 
-        let drawn_this_frame = {
+        self.core.meta.last_frame_drawn = {
             let mut s = S::Set::new();
             s.extend(drawn_this_frame);
             s
         };
-        self.core.meta.last_frame_drawn = drawn_this_frame;
 
-        Ok(())
+        ret
     }
 }

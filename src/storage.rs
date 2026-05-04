@@ -98,6 +98,37 @@ pub trait StackContainer<C>:
     fn contains(&self, elem: &C) -> bool
     where
         C: PartialEq;
+    /// Removes the item at `idx`, returning it while shifting later elements down. Returns `None`
+    /// if `idx` is out of range.
+    fn remove(&mut self, idx: usize) -> Option<C>;
+    /// Removes the item at `idx`, returning it and putting the last element in the vacent spot. Returns `None`
+    /// if `idx` is out of range.
+    fn swap_remove(&mut self, idx: usize) -> Option<C>;
+
+    /// Removes the first occurence of the item `elem` if it is in the stack, while shifting later elements down.
+    fn remove_elem(&mut self, elem: &C) -> Option<C>
+    where
+        C: PartialEq,
+    {
+        let idx = self
+            .iter()
+            .enumerate()
+            .find(|&(_, e)| *e == *elem)
+            .map(|(idx, _)| idx)?;
+        self.remove(idx)
+    }
+    /// Removes the first occurence of the item `elem` if it is in the stack, while moving the last element to take it's place.
+    fn swap_remove_elem(&mut self, elem: &C) -> Option<C>
+    where
+        C: PartialEq,
+    {
+        let idx = self
+            .iter()
+            .enumerate()
+            .find(|&(_, e)| *e == *elem)
+            .map(|(idx, _)| idx)?;
+        self.swap_remove(idx)
+    }
 }
 
 /// Trait abstracting sets.
@@ -180,6 +211,13 @@ mod alloc_impl {
         {
             self.as_slice().iter()
         }
+
+        fn remove(&mut self, idx: usize) -> Option<T> {
+            (idx < self.len()).then_some(self.remove(idx))
+        }
+        fn swap_remove(&mut self, idx: usize) -> Option<T> {
+            (idx < self.len()).then_some(self.swap_remove(idx))
+        }
     }
     impl<T> QueueContainer<T> for alloc::collections::vec_deque::VecDeque<T> {
         fn new() -> Self {
@@ -255,6 +293,10 @@ mod heapless_impl {
         }
     }
     impl<const S: usize, T> StackContainer<T> for heapless::vec::Vec<T, S> {
+        fn new() -> Self {
+            Vec::new()
+        }
+
         fn len(&self) -> usize {
             self.as_slice().len()
         }
@@ -273,10 +315,6 @@ mod heapless_impl {
 
         fn drain_all(&mut self) -> impl Iterator<Item = T> {
             self.drain(..)
-        }
-
-        fn new() -> Self {
-            Vec::new()
         }
 
         fn iter<'a>(&'a self) -> impl Iterator<Item = &'a T>
@@ -298,6 +336,13 @@ mod heapless_impl {
             T: PartialEq,
         {
             self.as_slice().contains(elem)
+        }
+
+        fn remove(&mut self, idx: usize) -> Option<T> {
+            (idx < self.len()).then_some(self.remove(idx))
+        }
+        fn swap_remove(&mut self, idx: usize) -> Option<T> {
+            (idx < self.len()).then_some(self.swap_remove(idx))
         }
     }
     impl<const N: usize, T> QueueContainer<T> for heapless::deque::Deque<T, N> {
