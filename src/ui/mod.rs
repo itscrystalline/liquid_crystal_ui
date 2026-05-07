@@ -105,6 +105,7 @@ impl<const CHAR_HEIGHT: usize, S: Storage> LcdScreenCore<CHAR_HEIGHT, S> {
                 transition_progress: None,
             },
         ))?;
+        self.update_required_custom_chars();
         Ok(id)
     }
 
@@ -171,23 +172,27 @@ impl<const CHAR_HEIGHT: usize, S: Storage> LcdScreenCore<CHAR_HEIGHT, S> {
             .drain_all()
             .filter_map(|(id, mut elem)| {
                 match elem.transitions.peek_mut() {
-                    Some(Transition::Delete) => None,
+                    Some(Transition::Delete) => {
+                        needs_update |= matches!(elem.content, WidgetContent::CustomCharacter(_));
+                        None
+                    },
                     rest => {
                         match rest {
                             Some(Transition::Hide) => {
                                 elem.hidden = true;
                                 elem.transitions.dequeue();
-                                needs_update &= matches!(elem.content, WidgetContent::CustomCharacter(_));
+                                needs_update |= matches!(elem.content, WidgetContent::CustomCharacter(_));
                             },
                             Some(Transition::Show) => {
                                 elem.hidden = false;
                                 elem.transitions.dequeue();
-                                needs_update &= matches!(elem.content, WidgetContent::CustomCharacter(_));
+                                needs_update |= matches!(elem.content, WidgetContent::CustomCharacter(_));
                             },
                             Some(Transition::ChangeTo(new)) => {
                                 #[cfg(feature = "log")]
                                 debug!("Transitioning {:?} into {new:?}", elem.content);
-                                needs_update &= matches!(new, WidgetContent::CustomCharacter(_));
+                                needs_update |= matches!(new, WidgetContent::CustomCharacter(_));
+                                needs_update |= matches!(elem.content, WidgetContent::CustomCharacter(_));
                                 core::mem::swap(&mut elem.content, new);
                                 elem.transitions.dequeue();
                             }
@@ -243,12 +248,22 @@ impl<const CHAR_HEIGHT: usize, S: Storage> LcdScreenCore<CHAR_HEIGHT, S> {
         let mut used = S::Vec::new();
         let mut full = false;
         for (_, widget) in self.meta.widgets.iter() {
-            if let WidgetContent::CustomCharacter(id) = widget.content {
-                full &= used.push(id).is_err();
+            if let WidgetContent::CustomCharacter(id) = widget.content
+                && !widget.hidden
+            {
+                full |= used.push(id).is_err();
             }
         }
 
         self.required_custom_chars = if full { Err(used) } else { Ok(used) }
+    }
+
+    fn bitmap_of(&self, char: CustomCharacterRef) -> Option<[u8; CHAR_HEIGHT]> {
+        self.meta
+            .registered_custom_chars
+            .iter()
+            .find(|(r, _)| *r == char.0)
+            .map(|(_, ch)| *ch)
     }
 }
 
@@ -352,6 +367,9 @@ impl<
         &mut self,
         character: CustomCharacterRef,
     ) -> Option<[u8; CHAR_HEIGHT]> {
+        if let Some(idx) = self.addr_of_character(character.0) {
+            _ = self.screen_custom_chars[idx as usize].take();
+        }
         self.core.unregister_custom_char(character)
     }
     /// Changes an existing custom character.
@@ -359,8 +377,13 @@ impl<
         &mut self,
         character: CustomCharacterRef,
         new_bitmap: [u8; CHAR_HEIGHT],
-    ) {
-        self.core.reregister_custom_char(character, new_bitmap)
+    ) -> Result<(), D::Error> {
+        self.core.reregister_custom_char(character, new_bitmap);
+        if let Some(idx) = self.addr_of_character(character.0) {
+            self.lcd
+                .set_custom_character_at(&mut self.delay, idx, new_bitmap)?;
+        }
+        Ok(())
     }
 
     /// Queues a transition to run on the widget with the key `key`. The transitions will run
@@ -388,22 +411,27 @@ impl<
             Err(r) => {
                 #[cfg(feature = "log")]
                 error!("Not enough storage to store full list of custom characters!");
-                ret = Err(UiError::InsufficentCharacterStorage);
+                ret = Err(UiError::Storage(StorageError::NotEnoughStorage));
                 r
             }
         };
-        let mut counter = 0u8;
-        for regis_char in self.core.meta.registered_custom_chars.iter() {
-            if let Some(&CustomCharacterRef(id)) = needed_custom_chars
-                .iter()
-                .find(|CustomCharacterRef(id)| *id == regis_char.0)
-                && (counter as usize) < CUSTOM_CHARACTER_SLOTS
-                && self.screen_custom_chars[counter as usize].is_none_or(|curr| curr != id)
-            {
-                self.lcd
-                    .set_custom_character_at(&mut self.delay, counter, regis_char.1)?;
-                _ = self.screen_custom_chars[counter as usize].insert(regis_char.0);
-                counter += 1;
+        for needed in needed_custom_chars.iter() {
+            if !self.screen_custom_chars.contains(&Some(needed.0)) {
+                let empty = self
+                    .screen_custom_chars
+                    .iter()
+                    .position(|opt| opt.is_none());
+                if let Some(idx) = empty
+                    && let Some(bitmap) = self.core.bitmap_of(*needed)
+                {
+                    self.lcd
+                        .set_custom_character_at(&mut self.delay, idx as u8, bitmap)?;
+                    _ = self.screen_custom_chars[idx].insert(needed.0);
+                } else {
+                    #[cfg(feature = "log")]
+                    error!("Not enough screen storage to store all needed custom characters!");
+                    ret = Err(UiError::InsufficentCharacterStorage);
+                }
             }
         }
 

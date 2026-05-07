@@ -11,7 +11,7 @@ pub enum UiError<BE: BackendError> {
     /// Error emitted from the backend.
     #[error("Screen backend error: {0}")]
     Backend(#[from] BE),
-    /// Error emitted from the backend.
+    /// More characters than what the screen's CGRAM can store.
     #[error("Using more custom characters than what the display is capable of storing")]
     InsufficentCharacterStorage,
 }
