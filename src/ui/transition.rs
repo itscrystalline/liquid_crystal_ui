@@ -6,7 +6,7 @@ use crate::{ScreenCoordinates, storage::TextContainer, ui::widget::WidgetContent
 #[derive(Debug)]
 /// Different transitions a widget can take to change it's state.
 /// Transitions that do not have a `duration` field complete in 1 frame.
-pub enum Transition<S: TextContainer> {
+pub enum Transition<T: TextContainer> {
     /// Moves the element from it's current position to a new position.
     MoveTo {
         /// New position.
@@ -29,11 +29,33 @@ pub enum Transition<S: TextContainer> {
         duration: u8,
     },
     /// Changes to another [`WidgetContent`](`crate::ui::widget::WidgetContent`).
-    ChangeTo(WidgetContent<S>),
+    ChangeTo(WidgetContent<T>),
     /// Hides the widget.
     Hide,
     /// Shows the widget.
     Show,
     /// Destroys the widget.
     Delete,
+}
+
+impl<T: TextContainer> Transition<T> {
+    /// Helper function to create [`Transition::Wait`].
+    pub fn wait(frames: u8) -> Self {
+        Self::Wait { duration: frames }
+    }
+    /// Helper function to create [`Transition::MoveTo`].
+    pub fn move_to(to: ScreenCoordinates, frames: u8) -> Self {
+        Self::MoveTo {
+            new: to,
+            duration: frames,
+        }
+    }
+    /// Helper function to create [`Transition::MoveToExt`].
+    pub fn move_from_to(from: ScreenCoordinates, to: ScreenCoordinates, frames: u8) -> Self {
+        Self::MoveToExt {
+            old: from,
+            new: to,
+            duration: frames,
+        }
+    }
 }
