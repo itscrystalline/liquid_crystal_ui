@@ -103,7 +103,7 @@ async fn main(spawner: Spawner) -> ! {
     let bat_1_ref = screen.register_custom_char(BAT_1).unwrap();
     let bat_2_ref = screen.register_custom_char(BAT_2).unwrap();
 
-    const FPS: u64 = 50;
+    const FPS: u64 = 30;
     fn random_spot() -> liquid_crystal_ui::ScreenCoordinates {
         let rng = Rng::new();
         let rnd = rng.random();
@@ -136,8 +136,11 @@ async fn main(spawner: Spawner) -> ! {
 
     let mut frame_counter = 0;
     let mut last_uptime = 0u32;
+    let mut last_usage = 0usize;
 
     spawner.spawn(ticker()).unwrap();
+    const TRANSITION_TIME: u8 = 4 * FPS as u8;
+
     loop {
         let uptime = UPTIME.load(Ordering::Relaxed);
         if uptime != last_uptime {
@@ -148,13 +151,22 @@ async fn main(spawner: Spawner) -> ! {
                     Transition::ChangeTo(WidgetContent::text(&format!("{uptime}s")).unwrap()),
                 )
                 .unwrap();
+            let stats = esp_alloc::HEAP.stats();
+            if last_usage != stats.current_usage {
+                log::info!("Uptime: {uptime}s");
+                log::info!("{stats}");
+                last_usage = stats.current_usage;
+            }
         }
-        if frame_counter % 4 * FPS == 0 {
+        if frame_counter % TRANSITION_TIME == 0 {
             screen
-                .queue_transition(hello_text, Transition::move_to(random_spot(), 200))
+                .queue_transition(smiley, Transition::move_to(random_spot(), TRANSITION_TIME))
                 .unwrap();
             screen
-                .queue_transition(smiley, Transition::move_to(random_spot(), 200))
+                .queue_transition(
+                    hello_text,
+                    Transition::move_to(random_spot(), TRANSITION_TIME),
+                )
                 .unwrap();
         }
         Timer::after(Duration::from_millis(1000 / FPS)).await;

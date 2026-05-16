@@ -23,7 +23,7 @@ log                    = "0.4.27"
 
 embassy-executor = { version = "0.9.1", features = ["log"] }
 embassy-time = { version = "0.5.0", features = ["log"] }
-esp-alloc = "0.9.0"
+esp-alloc = { version = "0.9.0", features = ["internal-heap-stats"] }
 esp-backtrace = { version = "0.18.1", features = [
   "esp32",
   "panic-handler",
@@ -35,7 +35,7 @@ critical-section = "1.2.0"
 static_cell      = "2.1.1"
 liquid_crystal = { version = "0.2.0", features = ["async"] }
 
-liquid_crystal_ui = { path = "../../../liquid_crystal_ui", features = ["async", "alloc", "liquid_crystal_driver"] }
+liquid_crystal_ui = { path = "../../../liquid_crystal_ui", features = ["async", "alloc", "liquid_crystal_driver", "log"] }
 
 
 [profile.dev]
