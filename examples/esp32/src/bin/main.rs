@@ -7,11 +7,21 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+use core::sync::atomic::{AtomicU32, Ordering};
+
+use alloc::format;
 use embassy_executor::Spawner;
 use embassy_time::{Duration, Timer};
 use esp_backtrace as _;
 use esp_hal::clock::CpuClock;
+use esp_hal::rng::Rng;
+use esp_hal::time::Rate;
 use esp_hal::timer::timg::TimerGroup;
+use liquid_crystal::{BusBits, LCD20X4, LiquidCrystal};
+use liquid_crystal_ui::ScreenCoordinates;
+use liquid_crystal_ui::ui::AsyncLcdScreen;
+use liquid_crystal_ui::ui::transition::Transition;
+use liquid_crystal_ui::ui::widget::WidgetContent;
 use log::info;
 
 extern crate alloc;
@@ -19,6 +29,38 @@ extern crate alloc;
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
 esp_bootloader_esp_idf::esp_app_desc!();
+
+static UPTIME: AtomicU32 = AtomicU32::new(0);
+const SMILEY: [u8; 8] = liquid_crystal_ui::bitmap!(
+    (. . . . .),
+    (. # . # .),
+    (. # . # .),
+    (. . . . .),
+    (# . . . #),
+    (# . # . #),
+    (. # . # .),
+    (. . . . .),
+);
+const BAT_1: [u8; 8] = liquid_crystal_ui::bitmap!(
+    (. . . . .),
+    (. # # # #),
+    (. # . . .),
+    (. # . # #),
+    (. # . # #),
+    (. # . . .),
+    (. # # # #),
+    (. . . . .),
+);
+const BAT_2: [u8; 8] = liquid_crystal_ui::bitmap!(
+    (. . . . .),
+    (# # # # .),
+    (. . . # .),
+    (# # . # #),
+    (# # . # #),
+    (. . . # .),
+    (# # # # .),
+    (. . . . .),
+);
 
 #[allow(
     clippy::large_stack_frames,
@@ -40,11 +82,91 @@ async fn main(spawner: Spawner) -> ! {
 
     info!("Embassy initialized!");
 
-    // TODO: Spawn some tasks
-    let _ = spawner;
+    let i2c_bus = esp_hal::i2c::master::I2c::new(
+        peripherals.I2C0,
+        esp_hal::i2c::master::Config::default().with_frequency(Rate::from_khz(400)),
+    )
+    .unwrap()
+    .with_scl(peripherals.GPIO22)
+    .with_sda(peripherals.GPIO23)
+    .into_async();
+    let mut interface = liquid_crystal::I2C::new(i2c_bus, 0x27);
+    let lcd = LiquidCrystal::new(&mut interface, BusBits::Bus4Bits, LCD20X4).asynch();
+    let mut screen = AsyncLcdScreen::<_, _, liquid_crystal_ui::storage::AllocStorage, _, _>::new(
+        lcd,
+        embassy_time::Delay,
+    )
+    .await
+    .unwrap();
 
+    let smiley_ref = screen.register_custom_char(SMILEY).unwrap();
+    let bat_1_ref = screen.register_custom_char(BAT_1).unwrap();
+    let bat_2_ref = screen.register_custom_char(BAT_2).unwrap();
+
+    const FPS: u64 = 50;
+    fn random_spot() -> liquid_crystal_ui::ScreenCoordinates {
+        let rng = Rng::new();
+        let rnd = rng.random();
+        ScreenCoordinates::at((rnd % 19) as u8, (rnd % 3) as u8)
+    }
+
+    let hello_text = screen
+        .new_elem(WidgetContent::text("Hello!").unwrap(), (0, 0), false)
+        .unwrap();
+    let smiley = screen
+        .new_elem(WidgetContent::CustomCharacter(smiley_ref), (8, 2), false)
+        .unwrap();
+
+    let _uptime_text = screen
+        .new_elem(WidgetContent::text("Uptime:").unwrap(), (0, 3), false)
+        .unwrap();
+    let uptime_widget = screen
+        .new_elem(WidgetContent::text("000").unwrap(), (7, 3), false)
+        .unwrap();
+
+    let _bat_text = screen
+        .new_elem(WidgetContent::text("Bat").unwrap(), (15, 0), false)
+        .unwrap();
+    let _bat_1 = screen
+        .new_elem(WidgetContent::CustomCharacter(bat_1_ref), (18, 0), false)
+        .unwrap();
+    let _bat_2 = screen
+        .new_elem(WidgetContent::CustomCharacter(bat_2_ref), (19, 0), false)
+        .unwrap();
+
+    let mut frame_counter = 0;
+    let mut last_uptime = 0u32;
+
+    spawner.spawn(ticker()).unwrap();
     loop {
-        info!("Hello world!");
-        Timer::after(Duration::from_secs(1)).await;
+        let uptime = UPTIME.load(Ordering::Relaxed);
+        if uptime != last_uptime {
+            last_uptime = uptime;
+            screen
+                .queue_transition(
+                    uptime_widget,
+                    Transition::ChangeTo(WidgetContent::text(&format!("{uptime}s")).unwrap()),
+                )
+                .unwrap();
+        }
+        if frame_counter % 4 * FPS == 0 {
+            screen
+                .queue_transition(hello_text, Transition::move_to(random_spot(), 200))
+                .unwrap();
+            screen
+                .queue_transition(smiley, Transition::move_to(random_spot(), 200))
+                .unwrap();
+        }
+        Timer::after(Duration::from_millis(1000 / FPS)).await;
+        screen.draw().await.unwrap();
+        frame_counter = frame_counter.wrapping_add(1);
+    }
+}
+
+#[embassy_executor::task]
+async fn ticker() {
+    loop {
+        Timer::after_secs(1).await;
+        UPTIME.fetch_add(1, Ordering::SeqCst);
     }
 }
