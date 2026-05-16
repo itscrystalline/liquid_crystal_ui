@@ -1,11 +1,11 @@
 [package]
 edition      = "2024"
-name         = "liquid_crystal_ui_esp32_example"
+name         = "liquid_crystal_ui_esp32_alloc_async"
 rust-version = "1.88"
 version      = "0.1.0"
 
 [[bin]]
-name = "liquid_crystal_ui_esp32_example"
+name = "liquid_crystal_ui_esp32_alloc_async"
 path = "./src/bin/main.rs"
 
 [dependencies]
