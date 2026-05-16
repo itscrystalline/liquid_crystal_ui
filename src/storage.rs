@@ -328,7 +328,7 @@ mod heapless_impl {
         where
             T: PartialEq + Ord,
         {
-            self.sort();
+            quicksort_ord(self.as_mut_slice());
             let len = {
                 let (deduped, _) = self.partition_dedup();
                 deduped.len()
@@ -364,6 +364,36 @@ mod heapless_impl {
         fn peek_mut(&mut self) -> Option<&mut T> {
             self.front_mut()
         }
+    }
+
+    fn quicksort_ord<T>(arr: &mut [T])
+    where
+        T: Ord,
+    {
+        if arr.len() <= 1 {
+            return;
+        }
+
+        fn i<T>(arr: &mut [T]) -> usize
+        where
+            T: Ord,
+        {
+            let len = arr.len();
+            let mut i = 0;
+            for j in 0..len - 1 {
+                if arr[j] <= arr[len - 1] {
+                    arr.swap(i, j);
+                    i += 1;
+                }
+            }
+
+            arr.swap(i, len - 1);
+            i
+        }
+
+        let i = i(arr);
+        quicksort_ord(&mut arr[0..i]);
+        quicksort_ord(&mut arr[i + 1..]);
     }
 }
 
