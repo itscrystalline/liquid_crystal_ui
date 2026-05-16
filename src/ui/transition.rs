@@ -44,17 +44,21 @@ impl<T: TextContainer> Transition<T> {
         Self::Wait { duration: frames }
     }
     /// Helper function to create [`Transition::MoveTo`].
-    pub fn move_to(to: ScreenCoordinates, frames: u8) -> Self {
+    pub fn move_to(to: impl Into<ScreenCoordinates>, frames: u8) -> Self {
         Self::MoveTo {
-            new: to,
+            new: to.into(),
             duration: frames,
         }
     }
     /// Helper function to create [`Transition::MoveToExt`].
-    pub fn move_from_to(from: ScreenCoordinates, to: ScreenCoordinates, frames: u8) -> Self {
+    pub fn move_from_to(
+        from: impl Into<ScreenCoordinates>,
+        to: impl Into<ScreenCoordinates>,
+        frames: u8,
+    ) -> Self {
         Self::MoveToExt {
-            old: from,
-            new: to,
+            old: from.into(),
+            new: to.into(),
             duration: frames,
         }
     }

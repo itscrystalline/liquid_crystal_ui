@@ -372,10 +372,10 @@ impl<
     pub fn new_elem(
         &mut self,
         content: WidgetContent<S::Text>,
-        pos: ScreenCoordinates,
+        pos: impl Into<ScreenCoordinates>,
         hidden: bool,
     ) -> Result<u32, UiError<D::Error>> {
-        Ok(self.core.new_elem(content, pos, hidden)?)
+        Ok(self.core.new_elem(content, pos.into(), hidden)?)
     }
 
     /// Registers a custom character for use with the screen.
@@ -545,10 +545,10 @@ impl<
     pub fn new_elem(
         &mut self,
         content: WidgetContent<S::Text>,
-        pos: ScreenCoordinates,
+        pos: impl Into<ScreenCoordinates>,
         hidden: bool,
     ) -> Result<u32, UiError<D::Error>> {
-        Ok(self.core.new_elem(content, pos, hidden)?)
+        Ok(self.core.new_elem(content, pos.into(), hidden)?)
     }
 
     /// Registers a custom character for use with the screen.
