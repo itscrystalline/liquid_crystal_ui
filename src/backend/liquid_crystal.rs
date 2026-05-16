@@ -21,6 +21,8 @@ impl<T: liquid_crystal::Interface, const COLS: u8, const LINES: usize> LcdBacken
 {
     /// The driver doesn't return errors, so no errors can happen in the driver
     type Error = Infallible;
+    const WIDTH: usize = COLS as usize;
+    const HEIGHT: usize = LINES;
 
     fn prepare_screen(&mut self, delay: &mut impl Delay) -> Result<&mut Self, Self::Error> {
         self.begin(delay);
@@ -95,6 +97,8 @@ impl<T: liquid_crystal::Interface, const COLS: u8, const LINES: usize> AsyncLcdB
 {
     /// The driver doesn't return errors, so no errors can happen in the driver
     type Error = Infallible;
+    const WIDTH: usize = COLS as usize;
+    const HEIGHT: usize = LINES;
 
     async fn prepare_screen(&mut self, delay: &mut impl ADelay) -> Result<&mut Self, Self::Error> {
         self.begin(delay).await;

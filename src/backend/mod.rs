@@ -25,6 +25,10 @@ pub trait AsyncLcdBackend<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS
     /// The error type that is emitted by the driver. If the driver doesn't fail, you can use
     /// [`core::convert::Infallible`] or the `!` (never) type.
     type Error: BackendError;
+    /// The width (in characters) of the screen.
+    const WIDTH: usize;
+    /// The height (number of rows, in characters) of the screen.
+    const HEIGHT: usize;
 
     /// Initializes the screen after initializing the driver. This function should disable the
     /// cursor and disable autoscroll. Note that this function accepts an already initialized
@@ -77,6 +81,10 @@ pub trait LcdBackend<const CHAR_HEIGHT: usize, const CUSTOM_CHARACTER_SLOTS: usi
     /// The error type that is emitted by the driver. If the driver doesn't fail, you can use
     /// [`core::convert::Infallible`] or the `!` (never) type.
     type Error: BackendError;
+    /// The width (in characters) of the screen.
+    const WIDTH: usize;
+    /// The height (number of rows, in characters) of the screen.
+    const HEIGHT: usize;
 
     /// Initializes the screen after initializing the driver. This function should disable the
     /// cursor and disable autoscroll. Note that this function accepts an already initialized

@@ -464,9 +464,11 @@ impl<
                 self.lcd.move_cursor(&mut self.delay, elem.pos)?;
                 match &elem.content {
                     WidgetContent::Text(ascii_string) => {
-                        self.lcd.write_str(&mut self.delay, ascii_string.chars())?;
+                        let in_frame = (D::WIDTH - elem.pos.x() as usize).min(ascii_string.len());
+                        self.lcd
+                            .write_str(&mut self.delay, ascii_string.chars().take(in_frame))?;
                         drawn_this_frame.extend(
-                            (elem.pos.x()..(elem.pos.x() + ascii_string.len() as u8))
+                            (elem.pos.x()..(elem.pos.x() + in_frame as u8))
                                 .map(|x| ScreenCoordinates::at(x, elem.pos.y())),
                         );
                     }
@@ -639,11 +641,12 @@ impl<
                 self.lcd.move_cursor(&mut self.delay, elem.pos).await?;
                 match &elem.content {
                     WidgetContent::Text(ascii_string) => {
+                        let in_frame = (D::WIDTH - elem.pos.x() as usize).min(ascii_string.len());
                         self.lcd
-                            .write_str(&mut self.delay, ascii_string.chars())
+                            .write_str(&mut self.delay, ascii_string.chars().take(in_frame))
                             .await?;
                         drawn_this_frame.extend(
-                            (elem.pos.x()..(elem.pos.x() + ascii_string.len() as u8))
+                            (elem.pos.x()..(elem.pos.x() + in_frame as u8))
                                 .map(|x| ScreenCoordinates::at(x, elem.pos.y())),
                         );
                     }
