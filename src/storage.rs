@@ -4,13 +4,12 @@
 //! If the [`AllocStorage`] or [`HeaplessStorage`] adapters don't suit your usecase e.g. you have
 //! custom buffers that you want to use as backing storage, you will have to create an adapter
 //! struct, then implement the [`Storage`] trait on it. For the associated types in the [`Storage`]
-//! trait, you must also implement [`TextContainer`], [`QueueContainer`], [`StackContainer`] and
-//! [`SetContainer`] on those types as well. See impls for [`AllocStorage`] or [`HeaplessStorage`]
+//! trait, you must also implement [`TextContainer`], [`QueueContainer`] and [`StackContainer`]
+//! on those types as well. See impls for [`AllocStorage`] or [`HeaplessStorage`]
 //! for examples.
 
 use crate::error::StorageError;
 use core::fmt::Debug;
-use core::hash::Hash;
 
 /// Trait describing a family of storage containers to use.
 pub trait Storage {
@@ -20,8 +19,6 @@ pub trait Storage {
     type Queue<T>: QueueContainer<T>;
     /// Stack (Vec-like) container. See [`StackContainer`].
     type Vec<T>: StackContainer<T>;
-    /// Set container. See [`SetContainer`].
-    type Set<T: Ord + Hash>: SetContainer<T>;
 }
 
 /// Trait abstracting ASCII text containers (strings).
@@ -104,6 +101,10 @@ pub trait StackContainer<C>:
     /// Removes the item at `idx`, returning it and putting the last element in the vacent spot. Returns `None`
     /// if `idx` is out of range.
     fn swap_remove(&mut self, idx: usize) -> Option<C>;
+    /// Sorts and removes consecutive duplicate elements.
+    fn sort_dedup(&mut self)
+    where
+        C: PartialEq + Ord;
 
     /// Removes the first occurence of the item `elem` if it is in the stack, while shifting later elements down.
     fn remove_elem(&mut self, elem: &C) -> Option<C>
@@ -131,23 +132,10 @@ pub trait StackContainer<C>:
     }
 }
 
-/// Trait abstracting sets.
-pub trait SetContainer<C>: Sized + Default + Extend<C> {
-    /// Creates an empty set.
-    fn new() -> Self;
-    /// Iterator over the set.
-    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a C>
-    where
-        C: 'a;
-}
-
 #[cfg(feature = "alloc")]
 mod alloc_impl {
-    use alloc::collections::btree_set::BTreeSet;
-
     use crate::error::StorageError;
-    use crate::storage::{QueueContainer, SetContainer, StackContainer, Storage, TextContainer};
-    use core::hash::Hash;
+    use crate::storage::{QueueContainer, StackContainer, Storage, TextContainer};
 
     /// Tells [`LcdScreen`](`crate::ui::LcdScreen`) and [`AsyncLcdScreen`](`crate::ui::AsyncLcdScreen`) to use the [`alloc`] crate's
     /// containers.
@@ -156,7 +144,6 @@ mod alloc_impl {
         type Text = alloc::vec::Vec<u8>;
         type Queue<T> = alloc::collections::VecDeque<T>;
         type Vec<T> = alloc::vec::Vec<T>;
-        type Set<T: Ord + Hash> = alloc::collections::BTreeSet<T>;
     }
 
     impl TextContainer for alloc::vec::Vec<u8> {
@@ -218,6 +205,14 @@ mod alloc_impl {
         fn swap_remove(&mut self, idx: usize) -> Option<T> {
             (idx < self.len()).then_some(self.swap_remove(idx))
         }
+
+        fn sort_dedup(&mut self)
+        where
+            T: PartialEq + Ord,
+        {
+            self.sort();
+            self.dedup();
+        }
     }
     impl<T> QueueContainer<T> for alloc::collections::vec_deque::VecDeque<T> {
         fn new() -> Self {
@@ -245,38 +240,23 @@ mod alloc_impl {
             self.front_mut()
         }
     }
-    impl<T: Ord + Hash> SetContainer<T> for alloc::collections::BTreeSet<T> {
-        fn new() -> Self {
-            BTreeSet::new()
-        }
-
-        fn iter<'a>(&'a self) -> impl Iterator<Item = &'a T>
-        where
-            T: 'a,
-        {
-            self.iter()
-        }
-    }
 }
 #[cfg(feature = "heapless")]
 mod heapless_impl {
-    use core::hash::Hash;
-    use heapless::{Deque, Vec, index_set::FnvIndexSet};
+    use heapless::{Deque, Vec};
 
     use crate::{
         error::StorageError,
-        storage::{QueueContainer, SetContainer, StackContainer, Storage, TextContainer},
+        storage::{QueueContainer, StackContainer, Storage, TextContainer},
     };
 
     /// Tells [`LcdScreen`](`crate::ui::LcdScreen`) and [`AsyncLcdScreen`](`crate::ui::AsyncLcdScreen`) to use the [`heapless`] crate's
-    /// containers. the `MAX_CAPACITY` generic specifies the size for *all* containers, so it must
-    /// be a power of 2 due to [`FnvIndexSet`](`heapless::index_set::FnvIndexSet`)'s constraints on its capacity.
+    /// containers. the `MAX_CAPACITY` generic specifies the size for *all* containers.  
     pub struct HeaplessStorage<const MAX_CAPACITY: usize>;
     impl<const MAX_CAPACITY: usize> Storage for HeaplessStorage<MAX_CAPACITY> {
         type Text = heapless::vec::Vec<u8, MAX_CAPACITY>;
         type Queue<T> = heapless::deque::Deque<T, MAX_CAPACITY>;
         type Vec<T> = heapless::vec::Vec<T, MAX_CAPACITY>;
-        type Set<T: Ord + Hash> = heapless::index_set::FnvIndexSet<T, MAX_CAPACITY>;
     }
 
     impl<const S: usize> TextContainer for heapless::vec::Vec<u8, S> {
@@ -344,6 +324,17 @@ mod heapless_impl {
         fn swap_remove(&mut self, idx: usize) -> Option<T> {
             (idx < self.len()).then_some(self.swap_remove(idx))
         }
+        fn sort_dedup(&mut self)
+        where
+            T: PartialEq + Ord,
+        {
+            self.sort();
+            let len = {
+                let (deduped, _) = self.partition_dedup();
+                deduped.len()
+            };
+            self.truncate(len);
+        }
     }
     impl<const N: usize, T> QueueContainer<T> for heapless::deque::Deque<T, N> {
         fn len(&self) -> usize {
@@ -372,18 +363,6 @@ mod heapless_impl {
 
         fn peek_mut(&mut self) -> Option<&mut T> {
             self.front_mut()
-        }
-    }
-    impl<const N: usize, T: Ord + Hash> SetContainer<T> for heapless::index_set::FnvIndexSet<T, N> {
-        fn new() -> Self {
-            FnvIndexSet::new()
-        }
-
-        fn iter<'a>(&'a self) -> impl Iterator<Item = &'a T>
-        where
-            T: 'a,
-        {
-            self.iter()
         }
     }
 }

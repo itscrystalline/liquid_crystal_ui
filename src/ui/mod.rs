@@ -58,7 +58,7 @@ use crate::{
     ScreenCoordinates,
     backend::{BackendError, LcdBackend},
     error::{StorageError, UiError},
-    storage::{QueueContainer, SetContainer, StackContainer, Storage, TextContainer},
+    storage::{QueueContainer, StackContainer, Storage, TextContainer},
     ui::{
         transition::Transition,
         widget::{CustomCharacterRef, Widget, WidgetContent},
@@ -84,7 +84,7 @@ type IdWidget<S> = (u32, Widget<S>);
 #[derive(Debug)]
 struct ScreenMetadata<const CHAR_HEIGHT: usize, S: Storage> {
     widgets: S::Vec<IdWidget<S>>,
-    last_frame_drawn: S::Set<ScreenCoordinates>,
+    last_frame_drawn: S::Vec<ScreenCoordinates>,
     registered_custom_chars: S::Vec<(u32, [u8; CHAR_HEIGHT])>,
 }
 impl<const CHAR_HEIGHT: usize, S: Storage> Default for ScreenMetadata<CHAR_HEIGHT, S> {
@@ -497,11 +497,8 @@ impl<
                 .write_byte(&mut self.delay, b' ')?;
         }
 
-        self.core.meta.last_frame_drawn = {
-            let mut s = S::Set::new();
-            s.extend(drawn_this_frame);
-            s
-        };
+        self.core.meta.last_frame_drawn = drawn_this_frame;
+        self.core.meta.last_frame_drawn.sort_dedup();
 
         ret
     }
@@ -679,11 +676,8 @@ impl<
                 .await?;
         }
 
-        self.core.meta.last_frame_drawn = {
-            let mut s = S::Set::new();
-            s.extend(drawn_this_frame);
-            s
-        };
+        self.core.meta.last_frame_drawn = drawn_this_frame;
+        self.core.meta.last_frame_drawn.sort_dedup();
 
         ret
     }
