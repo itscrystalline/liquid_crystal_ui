@@ -979,7 +979,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "liquid_crystal_ui_esp32_example"
+name = "liquid_crystal_ui_esp32_alloc_async"
 version = "0.1.0"
 dependencies = [
  "critical-section",

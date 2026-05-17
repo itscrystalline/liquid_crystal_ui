@@ -4,13 +4,12 @@
 //! If the [`AllocStorage`] or [`HeaplessStorage`] adapters don't suit your usecase e.g. you have
 //! custom buffers that you want to use as backing storage, you will have to create an adapter
 //! struct, then implement the [`Storage`] trait on it. For the associated types in the [`Storage`]
-//! trait, you must also implement [`TextContainer`], [`QueueContainer`], [`StackContainer`] and
-//! [`SetContainer`] on those types as well. See impls for [`AllocStorage`] or [`HeaplessStorage`]
+//! trait, you must also implement [`TextContainer`], [`QueueContainer`] and [`StackContainer`]
+//! on those types as well. See impls for [`AllocStorage`] or [`HeaplessStorage`]
 //! for examples.
 
 use crate::error::StorageError;
 use core::fmt::Debug;
-use core::hash::Hash;
 
 /// Trait describing a family of storage containers to use.
 pub trait Storage {
@@ -20,8 +19,6 @@ pub trait Storage {
     type Queue<T>: QueueContainer<T>;
     /// Stack (Vec-like) container. See [`StackContainer`].
     type Vec<T>: StackContainer<T>;
-    /// Set container. See [`SetContainer`].
-    type Set<T: Ord + Hash>: SetContainer<T>;
 }
 
 /// Trait abstracting ASCII text containers (strings).
@@ -53,6 +50,11 @@ pub trait TextContainer: StackContainer<u8> + Debug {
 pub trait QueueContainer<C>: IntoIterator<Item = C> + Sized + Default + Extend<C> {
     /// Creates an empty container.
     fn new() -> Self;
+    /// Shrinks the stack's allocation to only fit its contents. Use a blank impl if your storage
+    /// does not allocate.
+    fn minimize(&mut self);
+    /// Clears the stack.
+    fn clear(&mut self);
     /// The length of the queue.
     fn len(&self) -> usize;
     /// If the queue is empty.
@@ -74,6 +76,11 @@ pub trait StackContainer<C>:
 {
     /// Creates an empty container.
     fn new() -> Self;
+    /// Clears the stack.
+    fn clear(&mut self);
+    /// Shrinks the stack's allocation to only fit its contents. Use a blank impl if your storage
+    /// does not allocate.
+    fn minimize(&mut self);
     /// The length of the stack.
     fn len(&self) -> usize;
     /// If the stack is empty.
@@ -104,6 +111,10 @@ pub trait StackContainer<C>:
     /// Removes the item at `idx`, returning it and putting the last element in the vacent spot. Returns `None`
     /// if `idx` is out of range.
     fn swap_remove(&mut self, idx: usize) -> Option<C>;
+    /// Sorts and removes consecutive duplicate elements.
+    fn sort_dedup(&mut self)
+    where
+        C: PartialEq + Ord;
 
     /// Removes the first occurence of the item `elem` if it is in the stack, while shifting later elements down.
     fn remove_elem(&mut self, elem: &C) -> Option<C>
@@ -131,23 +142,10 @@ pub trait StackContainer<C>:
     }
 }
 
-/// Trait abstracting sets.
-pub trait SetContainer<C>: Sized + Default + Extend<C> {
-    /// Creates an empty set.
-    fn new() -> Self;
-    /// Iterator over the set.
-    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a C>
-    where
-        C: 'a;
-}
-
 #[cfg(feature = "alloc")]
 mod alloc_impl {
-    use alloc::collections::btree_set::BTreeSet;
-
     use crate::error::StorageError;
-    use crate::storage::{QueueContainer, SetContainer, StackContainer, Storage, TextContainer};
-    use core::hash::Hash;
+    use crate::storage::{QueueContainer, StackContainer, Storage, TextContainer};
 
     /// Tells [`LcdScreen`](`crate::ui::LcdScreen`) and [`AsyncLcdScreen`](`crate::ui::AsyncLcdScreen`) to use the [`alloc`] crate's
     /// containers.
@@ -156,7 +154,6 @@ mod alloc_impl {
         type Text = alloc::vec::Vec<u8>;
         type Queue<T> = alloc::collections::VecDeque<T>;
         type Vec<T> = alloc::vec::Vec<T>;
-        type Set<T: Ord + Hash> = alloc::collections::BTreeSet<T>;
     }
 
     impl TextContainer for alloc::vec::Vec<u8> {
@@ -218,6 +215,22 @@ mod alloc_impl {
         fn swap_remove(&mut self, idx: usize) -> Option<T> {
             (idx < self.len()).then_some(self.swap_remove(idx))
         }
+
+        fn sort_dedup(&mut self)
+        where
+            T: PartialEq + Ord,
+        {
+            self.sort();
+            self.dedup();
+        }
+
+        fn clear(&mut self) {
+            self.clear();
+        }
+
+        fn minimize(&mut self) {
+            self.shrink_to_fit();
+        }
     }
     impl<T> QueueContainer<T> for alloc::collections::vec_deque::VecDeque<T> {
         fn new() -> Self {
@@ -244,39 +257,32 @@ mod alloc_impl {
         fn peek_mut(&mut self) -> Option<&mut T> {
             self.front_mut()
         }
-    }
-    impl<T: Ord + Hash> SetContainer<T> for alloc::collections::BTreeSet<T> {
-        fn new() -> Self {
-            BTreeSet::new()
+
+        fn clear(&mut self) {
+            self.clear();
         }
 
-        fn iter<'a>(&'a self) -> impl Iterator<Item = &'a T>
-        where
-            T: 'a,
-        {
-            self.iter()
+        fn minimize(&mut self) {
+            self.shrink_to_fit();
         }
     }
 }
 #[cfg(feature = "heapless")]
 mod heapless_impl {
-    use core::hash::Hash;
-    use heapless::{Deque, Vec, index_set::FnvIndexSet};
+    use heapless::{Deque, Vec};
 
     use crate::{
         error::StorageError,
-        storage::{QueueContainer, SetContainer, StackContainer, Storage, TextContainer},
+        storage::{QueueContainer, StackContainer, Storage, TextContainer},
     };
 
     /// Tells [`LcdScreen`](`crate::ui::LcdScreen`) and [`AsyncLcdScreen`](`crate::ui::AsyncLcdScreen`) to use the [`heapless`] crate's
-    /// containers. the `MAX_CAPACITY` generic specifies the size for *all* containers, so it must
-    /// be a power of 2 due to [`FnvIndexSet`](`heapless::index_set::FnvIndexSet`)'s constraints on its capacity.
+    /// containers. the `MAX_CAPACITY` generic specifies the size for *all* containers.  
     pub struct HeaplessStorage<const MAX_CAPACITY: usize>;
     impl<const MAX_CAPACITY: usize> Storage for HeaplessStorage<MAX_CAPACITY> {
         type Text = heapless::vec::Vec<u8, MAX_CAPACITY>;
         type Queue<T> = heapless::deque::Deque<T, MAX_CAPACITY>;
         type Vec<T> = heapless::vec::Vec<T, MAX_CAPACITY>;
-        type Set<T: Ord + Hash> = heapless::index_set::FnvIndexSet<T, MAX_CAPACITY>;
     }
 
     impl<const S: usize> TextContainer for heapless::vec::Vec<u8, S> {
@@ -344,6 +350,26 @@ mod heapless_impl {
         fn swap_remove(&mut self, idx: usize) -> Option<T> {
             (idx < self.len()).then_some(self.swap_remove(idx))
         }
+        fn sort_dedup(&mut self)
+        where
+            T: PartialEq + Ord,
+        {
+            quicksort_ord(self.as_mut_slice());
+            let len = {
+                let (deduped, _) = {
+                    let this = &mut *self;
+                    partition_dedup_by(this, |a, b| a == b)
+                };
+                deduped.len()
+            };
+            self.truncate(len);
+        }
+
+        fn clear(&mut self) {
+            self.clear();
+        }
+
+        fn minimize(&mut self) {}
     }
     impl<const N: usize, T> QueueContainer<T> for heapless::deque::Deque<T, N> {
         fn len(&self) -> usize {
@@ -373,18 +399,147 @@ mod heapless_impl {
         fn peek_mut(&mut self) -> Option<&mut T> {
             self.front_mut()
         }
-    }
-    impl<const N: usize, T: Ord + Hash> SetContainer<T> for heapless::index_set::FnvIndexSet<T, N> {
-        fn new() -> Self {
-            FnvIndexSet::new()
+
+        fn clear(&mut self) {
+            self.clear();
         }
 
-        fn iter<'a>(&'a self) -> impl Iterator<Item = &'a T>
-        where
-            T: 'a,
-        {
-            self.iter()
+        fn minimize(&mut self) {}
+    }
+
+    fn quicksort_ord<T>(arr: &mut [T])
+    where
+        T: Ord,
+    {
+        if arr.len() <= 1 {
+            return;
         }
+
+        fn i<T>(arr: &mut [T]) -> usize
+        where
+            T: Ord,
+        {
+            let len = arr.len();
+            let mut i = 0;
+            for j in 0..len - 1 {
+                if arr[j] <= arr[len - 1] {
+                    arr.swap(i, j);
+                    i += 1;
+                }
+            }
+
+            arr.swap(i, len - 1);
+            i
+        }
+
+        let i = i(arr);
+        quicksort_ord(&mut arr[0..i]);
+        quicksort_ord(&mut arr[i + 1..]);
+    }
+
+    // yoinked from stdlib https://github.com/rust-lang/rust/issues/54279
+    fn partition_dedup_by<F, T>(this: &mut [T], mut same_bucket: F) -> (&mut [T], &mut [T])
+    where
+        F: FnMut(&mut T, &mut T) -> bool,
+    {
+        // Although we have a mutable reference to `self`, we cannot make
+        // *arbitrary* changes. The `same_bucket` calls could panic, so we
+        // must ensure that the slice is in a valid state at all times.
+        //
+        // The way that we handle this is by using swaps; we iterate
+        // over all the elements, swapping as we go so that at the end
+        // the elements we wish to keep are in the front, and those we
+        // wish to reject are at the back. We can then split the slice.
+        // This operation is still `O(n)`.
+        //
+        // Example: We start in this state, where `r` represents "next
+        // read" and `w` represents "next_write".
+        //
+        //           r
+        //     +---+---+---+---+---+---+
+        //     | 0 | 1 | 1 | 2 | 3 | 3 |
+        //     +---+---+---+---+---+---+
+        //           w
+        //
+        // Comparing self[r] against self[w-1], this is not a duplicate, so
+        // we swap self[r] and self[w] (no effect as r==w) and then increment both
+        // r and w, leaving us with:
+        //
+        //               r
+        //     +---+---+---+---+---+---+
+        //     | 0 | 1 | 1 | 2 | 3 | 3 |
+        //     +---+---+---+---+---+---+
+        //               w
+        //
+        // Comparing self[r] against self[w-1], this value is a duplicate,
+        // so we increment `r` but leave everything else unchanged:
+        //
+        //                   r
+        //     +---+---+---+---+---+---+
+        //     | 0 | 1 | 1 | 2 | 3 | 3 |
+        //     +---+---+---+---+---+---+
+        //               w
+        //
+        // Comparing self[r] against self[w-1], this is not a duplicate,
+        // so swap self[r] and self[w] and advance r and w:
+        //
+        //                       r
+        //     +---+---+---+---+---+---+
+        //     | 0 | 1 | 2 | 1 | 3 | 3 |
+        //     +---+---+---+---+---+---+
+        //                   w
+        //
+        // Not a duplicate, repeat:
+        //
+        //                           r
+        //     +---+---+---+---+---+---+
+        //     | 0 | 1 | 2 | 3 | 1 | 3 |
+        //     +---+---+---+---+---+---+
+        //                       w
+        //
+        // Duplicate, advance r. End of slice. Split at w.
+
+        let len = this.len();
+        if len <= 1 {
+            return (this, &mut []);
+        }
+
+        let ptr = this.as_mut_ptr();
+        let mut next_read: usize = 1;
+        let mut next_write: usize = 1;
+
+        // SAFETY: the `while` condition guarantees `next_read` and `next_write`
+        // are less than `len`, thus are inside `self`. `prev_ptr_write` points to
+        // one element before `ptr_write`, but `next_write` starts at 1, so
+        // `prev_ptr_write` is never less than 0 and is inside the slice.
+        // This fulfils the requirements for dereferencing `ptr_read`, `prev_ptr_write`
+        // and `ptr_write`, and for using `ptr.add(next_read)`, `ptr.add(next_write - 1)`
+        // and `prev_ptr_write.offset(1)`.
+        //
+        // `next_write` is also incremented at most once per loop at most meaning
+        // no element is skipped when it may need to be swapped.
+        //
+        // `ptr_read` and `prev_ptr_write` never point to the same element. This
+        // is required for `&mut *ptr_read`, `&mut *prev_ptr_write` to be safe.
+        // The explanation is simply that `next_read >= next_write` is always true,
+        // thus `next_read > next_write - 1` is too.
+        unsafe {
+            // Avoid bounds checks by using raw pointers.
+            while next_read < len {
+                let ptr_read = ptr.add(next_read);
+                let prev_ptr_write = ptr.add(next_write - 1);
+                if !same_bucket(&mut *ptr_read, &mut *prev_ptr_write) {
+                    if next_read != next_write {
+                        let ptr_write = prev_ptr_write.add(1);
+                        core::ptr::swap(ptr_read, ptr_write);
+                    }
+                    next_write += 1;
+                }
+                next_read += 1;
+            }
+        }
+
+        this.split_at_mut(next_write)
     }
 }
 
