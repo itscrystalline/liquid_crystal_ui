@@ -261,6 +261,7 @@ impl<const CHAR_HEIGHT: usize, S: Storage> LcdScreenCore<CHAR_HEIGHT, S> {
                             }
                             _ => (),
                         }
+                        elem.transitions.minimize();
                         Some((id, elem))
                     }
                 }
