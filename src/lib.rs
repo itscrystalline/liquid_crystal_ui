@@ -5,7 +5,6 @@
 #![no_std]
 #![warn(missing_docs)]
 #![feature(doc_cfg)]
-#![cfg_attr(feature = "heapless", feature(slice_partition_dedup))]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;

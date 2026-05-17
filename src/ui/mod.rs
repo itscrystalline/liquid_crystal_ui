@@ -85,6 +85,8 @@ type IdWidget<S> = (u32, Widget<S>);
 struct ScreenMetadata<const CHAR_HEIGHT: usize, S: Storage> {
     widgets: S::Vec<IdWidget<S>>,
     last_frame_drawn: S::Vec<ScreenCoordinates>,
+    _back_widgets: S::Vec<IdWidget<S>>,
+    _back_last_frame_drawn: S::Vec<ScreenCoordinates>,
     registered_custom_chars: S::Vec<(u32, [u8; CHAR_HEIGHT])>,
 }
 impl<const CHAR_HEIGHT: usize, S: Storage> Default for ScreenMetadata<CHAR_HEIGHT, S> {
@@ -92,6 +94,8 @@ impl<const CHAR_HEIGHT: usize, S: Storage> Default for ScreenMetadata<CHAR_HEIGH
         Self {
             widgets: Default::default(),
             last_frame_drawn: Default::default(),
+            _back_widgets: Default::default(),
+            _back_last_frame_drawn: Default::default(),
             registered_custom_chars: Default::default(),
         }
     }
@@ -191,7 +195,7 @@ impl<const CHAR_HEIGHT: usize, S: Storage> LcdScreenCore<CHAR_HEIGHT, S> {
 
     fn tick(&mut self) {
         let mut needs_update = false;
-        self.meta.widgets = self.meta.widgets
+        self.meta._back_widgets.extend(self.meta.widgets
             .drain_all()
             .filter_map(|(id, mut elem)| {
                 match elem.transitions.peek_mut() {
@@ -260,8 +264,11 @@ impl<const CHAR_HEIGHT: usize, S: Storage> LcdScreenCore<CHAR_HEIGHT, S> {
                         Some((id, elem))
                     }
                 }
-            })
-            .collect();
+            }));
+        core::mem::swap(&mut self.meta._back_widgets, &mut self.meta.widgets);
+        self.meta.widgets.minimize();
+        self.meta._back_widgets.minimize();
+
         if needs_update {
             self.update_required_custom_chars();
         }
@@ -458,7 +465,6 @@ impl<
             }
         }
 
-        let mut drawn_this_frame = S::Vec::new();
         for (_, elem) in self.core.meta.widgets.iter() {
             if !elem.hidden {
                 self.lcd.move_cursor(&mut self.delay, elem.pos)?;
@@ -467,7 +473,7 @@ impl<
                         let in_frame = (D::WIDTH - elem.pos.x() as usize).min(ascii_string.len());
                         self.lcd
                             .write_str(&mut self.delay, ascii_string.chars().take(in_frame))?;
-                        drawn_this_frame.extend(
+                        self.core.meta._back_last_frame_drawn.extend(
                             (elem.pos.x()..(elem.pos.x() + in_frame as u8))
                                 .map(|x| ScreenCoordinates::at(x, elem.pos.y())),
                         );
@@ -475,7 +481,7 @@ impl<
                     WidgetContent::CustomCharacter(CustomCharacterRef(id)) => {
                         if let Some(idx) = self.addr_of_character(*id) {
                             self.lcd.write_custom_character(&mut self.delay, idx)?;
-                            drawn_this_frame.push(elem.pos)?;
+                            self.core.meta._back_last_frame_drawn.push(elem.pos)?;
                         } else {
                             #[cfg(feature = "log")]
                             error!("No custom character with ID {id}!")
@@ -485,20 +491,26 @@ impl<
             }
         }
 
+        self.core.meta._back_last_frame_drawn.sort_dedup();
+
         for pixel in self
             .core
             .meta
             .last_frame_drawn
             .iter()
-            .filter(|&x| !drawn_this_frame.contains(x))
+            .filter(|&x| !self.core.meta._back_last_frame_drawn.contains(x))
         {
             self.lcd
                 .move_cursor(&mut self.delay, *pixel)?
                 .write_byte(&mut self.delay, b' ')?;
         }
 
-        self.core.meta.last_frame_drawn = drawn_this_frame;
-        self.core.meta.last_frame_drawn.sort_dedup();
+        core::mem::swap(
+            &mut self.core.meta.last_frame_drawn,
+            &mut self.core.meta._back_last_frame_drawn,
+        );
+        self.core.meta._back_last_frame_drawn.clear();
+        self.core.meta.last_frame_drawn.minimize();
 
         ret
     }

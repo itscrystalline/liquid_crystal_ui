@@ -50,6 +50,11 @@ pub trait TextContainer: StackContainer<u8> + Debug {
 pub trait QueueContainer<C>: IntoIterator<Item = C> + Sized + Default + Extend<C> {
     /// Creates an empty container.
     fn new() -> Self;
+    /// Shrinks the stack's allocation to only fit its contents. Use a blank impl if your storage
+    /// does not allocate.
+    fn minimize(&mut self);
+    /// Clears the stack.
+    fn clear(&mut self);
     /// The length of the queue.
     fn len(&self) -> usize;
     /// If the queue is empty.
@@ -71,6 +76,11 @@ pub trait StackContainer<C>:
 {
     /// Creates an empty container.
     fn new() -> Self;
+    /// Clears the stack.
+    fn clear(&mut self);
+    /// Shrinks the stack's allocation to only fit its contents. Use a blank impl if your storage
+    /// does not allocate.
+    fn minimize(&mut self);
     /// The length of the stack.
     fn len(&self) -> usize;
     /// If the stack is empty.
@@ -213,6 +223,14 @@ mod alloc_impl {
             self.sort();
             self.dedup();
         }
+
+        fn clear(&mut self) {
+            self.clear();
+        }
+
+        fn minimize(&mut self) {
+            self.shrink_to_fit();
+        }
     }
     impl<T> QueueContainer<T> for alloc::collections::vec_deque::VecDeque<T> {
         fn new() -> Self {
@@ -238,6 +256,14 @@ mod alloc_impl {
 
         fn peek_mut(&mut self) -> Option<&mut T> {
             self.front_mut()
+        }
+
+        fn clear(&mut self) {
+            self.clear();
+        }
+
+        fn minimize(&mut self) {
+            self.shrink_to_fit();
         }
     }
 }
@@ -338,6 +364,12 @@ mod heapless_impl {
             };
             self.truncate(len);
         }
+
+        fn clear(&mut self) {
+            self.clear();
+        }
+
+        fn minimize(&mut self) {}
     }
     impl<const N: usize, T> QueueContainer<T> for heapless::deque::Deque<T, N> {
         fn len(&self) -> usize {
@@ -367,6 +399,12 @@ mod heapless_impl {
         fn peek_mut(&mut self) -> Option<&mut T> {
             self.front_mut()
         }
+
+        fn clear(&mut self) {
+            self.clear();
+        }
+
+        fn minimize(&mut self) {}
     }
 
     fn quicksort_ord<T>(arr: &mut [T])
