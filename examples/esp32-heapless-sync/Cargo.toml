@@ -25,6 +25,7 @@ esp-println = { version = "0.16.1", features = ["esp32", "log-04"] }
 
 liquid_crystal = { version = "0.2.0"}
 liquid_crystal_ui = { path = "../../../liquid_crystal_ui", features = ["heapless", "liquid_crystal_driver", "log"] }
+itoa = { version = "1.0.18", default-features = false, features = ["no-panic"] }
 
 
 [profile.dev]
