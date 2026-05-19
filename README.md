@@ -85,3 +85,7 @@ loop {
     screen.draw()?;
 }
 ```
+
+## Demonstration
+
+See the `examples/` directory for demo code and videos.
