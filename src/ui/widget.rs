@@ -18,7 +18,7 @@ pub struct Widget<S: Storage> {
 }
 
 #[derive(Clone, Copy, Debug)]
-/// A reference to a custom character, agnostic of it's actual index in the screen RAM.
+/// A reference to a custom character, agnostic of its actual index in the screen RAM.
 pub struct CustomCharacterRef(pub(crate) u32);
 
 #[derive(Debug)]
@@ -26,13 +26,47 @@ pub struct CustomCharacterRef(pub(crate) u32);
 pub enum WidgetContent<S: TextContainer> {
     /// ASCII / Extended ASCII string.
     Text(S),
+    /// ASCII / Extended ASCII string that scrolls in place.
+    ScrollingText {
+        /// The String.
+        string: S,
+        /// The actual length to show on screen.
+        len: usize,
+        /// How many characters to scroll per tick.
+        speed: usize,
+        /// How the text scrolls.
+        behaviour: ScrollBehaviour,
+    },
     /// A defined custom character.
     CustomCharacter(CustomCharacterRef),
+}
+#[derive(Debug)]
+/// Describes how does a [`WidgetContent::ScrollingText`] scroll. The parameters in `Reset` and `Bounce`
+/// dictate how long to stop at the end before continuing.
+pub enum ScrollBehaviour {
+    /// Snaps back to the start after reaching the end.
+    Reset(u8),
+    /// Transparently puts the front in after reaching the end.
+    Loop,
+    /// Bounces back the other way after reaching the end.
+    Bounce(u8),
 }
 
 impl<S: TextContainer> WidgetContent<S> {
     /// Shorthand for creating a [`WidgetContent::Text`] from an `&str`.
     pub fn text(c: &str) -> Result<Self, StorageError> {
         Ok(WidgetContent::Text(S::from_str(c)?))
+    }
+    /// Shorthand for creating a [`WidgetContent::ScrollingText`].
+    pub fn scroll_text(
+        c: &str,
+        len: usize,
+        behaviour: ScrollBehaviour,
+    ) -> Result<Self, StorageError> {
+        Ok(WidgetContent::ScrollingText {
+            string: S::from_str(c)?,
+            len,
+            behaviour,
+        })
     }
 }

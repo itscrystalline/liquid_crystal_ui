@@ -481,6 +481,12 @@ impl<
                             error!("No custom character with ID {id}!")
                         }
                     }
+                    WidgetContent::ScrollingText {
+                        string,
+                        len,
+                        speed,
+                        behaviour,
+                    } => todo!(),
                 }
             }
         }
@@ -661,6 +667,12 @@ impl<
                             error!("No custom character with ID {id}!")
                         }
                     }
+                    WidgetContent::ScrollingText {
+                        string,
+                        len,
+                        speed,
+                        behaviour,
+                    } => todo!(),
                 }
             }
         }
