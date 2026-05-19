@@ -7,6 +7,7 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+use core::num::NonZeroUsize;
 use esp_backtrace as _;
 use esp_hal::clock::CpuClock;
 use esp_hal::delay::Delay;
@@ -18,7 +19,7 @@ use liquid_crystal_ui::ScreenCoordinates;
 use liquid_crystal_ui::storage::HeaplessStorage;
 use liquid_crystal_ui::ui::LcdScreen;
 use liquid_crystal_ui::ui::transition::Transition;
-use liquid_crystal_ui::ui::widget::WidgetContent;
+use liquid_crystal_ui::ui::widget::{ScrollBehaviour, ScrollSpeed, WidgetContent};
 
 // This creates a default app-descriptor required by the esp-idf bootloader.
 // For more information see: <https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/system/app_image_format.html#application-description>
@@ -103,6 +104,11 @@ fn main() -> ! {
         let rnd = rng.random();
         ScreenCoordinates::at((rnd % 19) as u8, (rnd % 3) as u8)
     }
+    macro_rules! nz {
+        ($x: expr) => {
+            NonZeroUsize::new($x).unwrap()
+        };
+    }
 
     let hello_text = screen
         .new_elem(WidgetContent::text("Hello!").unwrap(), (0, 0), false)
@@ -119,7 +125,17 @@ fn main() -> ! {
         .unwrap();
 
     let _bat_text = screen
-        .new_elem(WidgetContent::text("Bat").unwrap(), (15, 0), false)
+        .new_elem(
+            WidgetContent::scroll_text(
+                "Bat (Not real)  ",
+                nz!(5),
+                ScrollSpeed::TPC(nz!(15)),
+                ScrollBehaviour::Loop,
+            )
+            .unwrap(),
+            (13, 0),
+            false,
+        )
         .unwrap();
     let _bat_1 = screen
         .new_elem(WidgetContent::CustomCharacter(bat_1_ref), (18, 0), false)
@@ -127,6 +143,33 @@ fn main() -> ! {
     let _bat_2 = screen
         .new_elem(WidgetContent::CustomCharacter(bat_2_ref), (19, 0), false)
         .unwrap();
+
+    let _scroll_demo_1 = screen
+        .new_elem(
+            WidgetContent::scroll_text(
+                "boioingnggg boioingnggg",
+                nz!(10),
+                ScrollSpeed::TPC(nz!(10)),
+                ScrollBehaviour::Bounce(5),
+            )
+            .unwrap(),
+            (0, 0),
+            false,
+        )
+        .unwrap();
+    // let _scroll_demo_2 = screen
+    //     .new_elem(
+    //         WidgetContent::scroll_text(
+    //             "sorry guys i had the limit at 32",
+    //             nz!(10),
+    //             ScrollSpeed::TPC(nz!(20)),
+    //             ScrollBehaviour::Reset(5),
+    //         )
+    //         .unwrap(),
+    //         (9, 3),
+    //         false,
+    //     )
+    //     .unwrap();
 
     let mut frame_counter = 0u64;
     const TRANSITION_TIME: u64 = 4 * FPS;
