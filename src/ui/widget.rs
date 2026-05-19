@@ -34,8 +34,8 @@ pub enum WidgetContent<S: TextContainer> {
         string: S,
         /// The actual length to show on screen.
         len: NonZeroUsize,
-        /// How many characters to scroll per tick.
-        speed: NonZeroUsize,
+        /// How fast the text should scroll.
+        speed: ScrollSpeed,
 
         #[allow(private_interfaces)]
         #[allow(missing_docs)]
@@ -43,6 +43,14 @@ pub enum WidgetContent<S: TextContainer> {
     },
     /// A defined custom character.
     CustomCharacter(CustomCharacterRef),
+}
+#[derive(Debug)]
+/// The scroll speed of a [`WidgetContent::ScrollingText`].
+pub enum ScrollSpeed {
+    /// Characters per tick.
+    CPT(NonZeroUsize),
+    /// Ticks per character.
+    TPC(NonZeroUsize),
 }
 #[derive(Debug)]
 pub(crate) enum ScrollingTextState {
@@ -195,19 +203,16 @@ impl<S: TextContainer> WidgetContent<S> {
     pub fn scroll_text(
         c: &str,
         len: NonZeroUsize,
-        speed: usize,
+        speed: ScrollSpeed,
         behaviour: ScrollBehaviour,
     ) -> Result<Self, StorageError> {
-        if speed == 0 {
-            return Self::text(&c[0..(c.len().min(len.into()))]);
-        }
         if c.len() <= len.into() {
             Self::text(c)
         } else {
             Ok(WidgetContent::ScrollingText {
                 string: S::from_str(c)?,
                 len,
-                speed: NonZeroUsize::new(speed).unwrap(), // We already checked for 0 speed above
+                speed,
                 state: match behaviour {
                     ScrollBehaviour::Reset(c) => ScrollingTextState::Reset {
                         range: 0..len.into(),
