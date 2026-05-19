@@ -61,7 +61,7 @@ use crate::{
     storage::{QueueContainer, StackContainer, Storage, TextContainer},
     ui::{
         transition::Transition,
-        widget::{CustomCharacterRef, Widget, WidgetContent},
+        widget::{CustomCharacterRef, ScrollingTextState, Widget, WidgetContent},
     },
 };
 use core::fmt::Debug;
@@ -198,6 +198,9 @@ impl<const CHAR_HEIGHT: usize, S: Storage> LcdScreenCore<CHAR_HEIGHT, S> {
         self.meta._back_widgets.extend(self.meta.widgets
             .drain_all()
             .filter_map(|(id, mut elem)| {
+                if let WidgetContent::ScrollingText { string, state, speed, .. } = &mut elem.content {
+                    state.next(string.len(), *speed);
+                }
                 match elem.transitions.peek_mut() {
                     Some(Transition::Delete) => {
                         needs_update |= matches!(elem.content, WidgetContent::CustomCharacter(_));
@@ -489,11 +492,34 @@ impl<
                         }
                     }
                     WidgetContent::ScrollingText {
-                        string,
-                        len,
-                        speed,
-                        behaviour,
-                    } => todo!(),
+                        string, len, state, ..
+                    } => match state {
+                        ScrollingTextState::Reset { range, .. }
+                        | ScrollingTextState::Bounce { range, .. } => {
+                            let len = usize::from(*len);
+                            let iter = string.chars().skip(range.start).take(len);
+                            let in_frame = (D::WIDTH - elem.pos.x() as usize).min(len);
+                            self.lcd.write_str(&mut self.delay, iter.take(in_frame))?;
+                            drawn_this_frame.extend(
+                                (elem.pos.x()..(elem.pos.x() + in_frame as u8))
+                                    .map(|x| ScreenCoordinates::at(x, elem.pos.y())),
+                            );
+                        }
+                        ScrollingTextState::Loop { main, wraparound } => {
+                            let len = usize::from(*len);
+                            let iter = string
+                                .chars()
+                                .skip(main.start)
+                                .take(main.len())
+                                .chain(string.chars().take(*wraparound));
+                            let in_frame = (D::WIDTH - elem.pos.x() as usize).min(len);
+                            self.lcd.write_str(&mut self.delay, iter.take(in_frame))?;
+                            drawn_this_frame.extend(
+                                (elem.pos.x()..(elem.pos.x() + in_frame as u8))
+                                    .map(|x| ScreenCoordinates::at(x, elem.pos.y())),
+                            );
+                        }
+                    },
                 }
             }
         }
@@ -678,11 +704,38 @@ impl<
                         }
                     }
                     WidgetContent::ScrollingText {
-                        string,
-                        len,
-                        speed,
-                        behaviour,
-                    } => todo!(),
+                        string, len, state, ..
+                    } => match state {
+                        ScrollingTextState::Reset { range, .. }
+                        | ScrollingTextState::Bounce { range, .. } => {
+                            let len = usize::from(*len);
+                            let iter = string.chars().skip(range.start).take(len);
+                            let in_frame = (D::WIDTH - elem.pos.x() as usize).min(len);
+                            self.lcd
+                                .write_str(&mut self.delay, iter.take(in_frame))
+                                .await?;
+                            drawn_this_frame.extend(
+                                (elem.pos.x()..(elem.pos.x() + in_frame as u8))
+                                    .map(|x| ScreenCoordinates::at(x, elem.pos.y())),
+                            );
+                        }
+                        ScrollingTextState::Loop { main, wraparound } => {
+                            let len = usize::from(*len);
+                            let iter = string
+                                .chars()
+                                .skip(main.start)
+                                .take(main.len())
+                                .chain(string.chars().take(*wraparound));
+                            let in_frame = (D::WIDTH - elem.pos.x() as usize).min(len);
+                            self.lcd
+                                .write_str(&mut self.delay, iter.take(in_frame))
+                                .await?;
+                            drawn_this_frame.extend(
+                                (elem.pos.x()..(elem.pos.x() + in_frame as u8))
+                                    .map(|x| ScreenCoordinates::at(x, elem.pos.y())),
+                            );
+                        }
+                    },
                 }
             }
         }

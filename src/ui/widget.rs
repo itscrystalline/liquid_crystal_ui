@@ -1,5 +1,7 @@
 //! On-screen widgets.
 
+use core::{num::NonZeroUsize, ops::Range};
+
 use crate::{
     ScreenCoordinates,
     error::StorageError,
@@ -31,15 +33,143 @@ pub enum WidgetContent<S: TextContainer> {
         /// The String.
         string: S,
         /// The actual length to show on screen.
-        len: usize,
+        len: NonZeroUsize,
         /// How many characters to scroll per tick.
-        speed: usize,
-        /// How the text scrolls.
-        behaviour: ScrollBehaviour,
+        speed: NonZeroUsize,
+
+        #[allow(private_interfaces)]
+        #[allow(missing_docs)]
+        state: ScrollingTextState,
     },
     /// A defined custom character.
     CustomCharacter(CustomCharacterRef),
 }
+#[derive(Debug)]
+pub(crate) enum ScrollingTextState {
+    Reset {
+        range: Range<usize>,
+        cooldown: u8,
+        cd: u8,
+    },
+    Loop {
+        main: Range<usize>,
+        wraparound: usize,
+    },
+    Bounce {
+        range: Range<usize>,
+        cooldown: u8,
+        cd: u8,
+        forwards: bool,
+    },
+}
+impl ScrollingTextState {
+    pub(crate) fn next(&mut self, text_len: usize, spd: NonZeroUsize) {
+        let spd = usize::from(spd);
+        match self {
+            ScrollingTextState::Reset {
+                range,
+                cooldown,
+                cd,
+            } => {
+                let disp_len = range.end - range.start;
+                if *cd == 0 {
+                    let next_range = Range {
+                        start: range.start + spd,
+                        end: range.end + spd,
+                    };
+
+                    if next_range.end <= text_len {
+                        *range = next_range;
+                    } else {
+                        *range = Range {
+                            start: text_len - disp_len,
+                            end: text_len,
+                        };
+                        *cd = *cooldown;
+                    }
+                } else {
+                    *cd -= 1;
+                }
+            }
+            ScrollingTextState::Loop { main, wraparound } => {
+                //   0   1   2   3   4   5   6   7   8   9   10  11  12    len: 13
+                // +---+---+---+---+---+---+---+---+---+---+---+---+---+
+                // | H | e | l | l | o | , |   | W | o | r | l | d | ! |
+                // +---+---+---+---+---+---+---+---+---+---+---+---+---+
+                // \-------------------/  ->
+                //             \-------------------/  ->
+                //                             ->  \-------------------/   main: 8..13,  wraparound: (0..)0 -> 8..13 -> 9%13..14%13 -> 9..1
+                // ----/                                \---------------   main: 9..13,  wraparound: (0..)1 -> 9..1  -> 10%13..2%13 -> 10..2
+                // --------/                                \-----------   main: 10..13, wraparound: (0..)2 -> 10..2 -> 11%13..3%13 -> 11..3 -> 12..4
+                // ----------------/                               \----   main: 12..13, wraparound: (0..)4 -> 12..4 -> 13%13..5%13 -> 0..5
+                // \-------------------/                                   main: 0..5, wraparound: (0..)0   -> 0..5
+                let reassembled_range = if *wraparound != 0 && main.end == text_len {
+                    main.start..*wraparound
+                } else {
+                    main.start..main.end
+                };
+
+                let new_range = Range {
+                    start: (reassembled_range.start + spd) % text_len,
+                    end: (reassembled_range.end + spd) % text_len,
+                };
+
+                if new_range.start > new_range.end {
+                    *wraparound = new_range.end;
+                    *main = new_range.start..text_len;
+                } else {
+                    *main = new_range;
+                }
+            }
+            ScrollingTextState::Bounce {
+                range,
+                cooldown,
+                cd,
+                forwards,
+            } => {
+                let disp_len = range.end - range.start;
+                if *cd == 0 {
+                    if *forwards {
+                        let next_range = Range {
+                            start: range.start + spd,
+                            end: range.end + spd,
+                        };
+
+                        if next_range.end <= text_len {
+                            *range = next_range;
+                        } else {
+                            *range = Range {
+                                start: text_len - disp_len,
+                                end: text_len,
+                            };
+                            *cd = *cooldown;
+                        }
+                    } else {
+                        let met_zero = range.start.checked_sub(spd);
+                        if let Some(start) = met_zero {
+                            *range = Range {
+                                start,
+                                end: range.end - spd,
+                            };
+                        } else {
+                            *range = Range {
+                                start: 0,
+                                end: disp_len,
+                            };
+                            *cd = *cooldown;
+                        }
+                    }
+                } else {
+                    *cd -= 1;
+                    if *cd == 0 {
+                        *forwards = !*forwards;
+                    }
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug)]
 /// Describes how does a [`WidgetContent::ScrollingText`] scroll. The parameters in `Reset` and `Bounce`
 /// dictate how long to stop at the end before continuing.
@@ -57,16 +187,45 @@ impl<S: TextContainer> WidgetContent<S> {
     pub fn text(c: &str) -> Result<Self, StorageError> {
         Ok(WidgetContent::Text(S::from_str(c)?))
     }
+
     /// Shorthand for creating a [`WidgetContent::ScrollingText`].
+    ///
+    /// Note that passing a string thats shorter or equal than `len`, or setting speed == 0 will create a
+    /// regular [`WidgetContent::Text`].
     pub fn scroll_text(
         c: &str,
-        len: usize,
+        len: NonZeroUsize,
+        speed: usize,
         behaviour: ScrollBehaviour,
     ) -> Result<Self, StorageError> {
-        Ok(WidgetContent::ScrollingText {
-            string: S::from_str(c)?,
-            len,
-            behaviour,
-        })
+        if speed == 0 {
+            return Self::text(&c[0..(c.len().min(len.into()))]);
+        }
+        if c.len() <= len.into() {
+            Self::text(c)
+        } else {
+            Ok(WidgetContent::ScrollingText {
+                string: S::from_str(c)?,
+                len,
+                speed: NonZeroUsize::new(speed).unwrap(), // We already checked for 0 speed above
+                state: match behaviour {
+                    ScrollBehaviour::Reset(c) => ScrollingTextState::Reset {
+                        range: 0..len.into(),
+                        cooldown: c,
+                        cd: 0,
+                    },
+                    ScrollBehaviour::Loop => ScrollingTextState::Loop {
+                        main: 0..len.into(),
+                        wraparound: 0,
+                    },
+                    ScrollBehaviour::Bounce(c) => ScrollingTextState::Bounce {
+                        range: 0..len.into(),
+                        cooldown: c,
+                        cd: 0,
+                        forwards: true,
+                    },
+                },
+            })
+        }
     }
 }
