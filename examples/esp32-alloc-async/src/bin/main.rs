@@ -7,6 +7,7 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+use core::num::NonZeroUsize;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use alloc::format;
@@ -21,7 +22,7 @@ use liquid_crystal::{BusBits, LCD20X4, LiquidCrystal};
 use liquid_crystal_ui::ScreenCoordinates;
 use liquid_crystal_ui::ui::AsyncLcdScreen;
 use liquid_crystal_ui::ui::transition::Transition;
-use liquid_crystal_ui::ui::widget::WidgetContent;
+use liquid_crystal_ui::ui::widget::{ScrollBehaviour, ScrollSpeed, WidgetContent};
 use log::info;
 
 extern crate alloc;
@@ -39,6 +40,16 @@ const SMILEY: [u8; 8] = liquid_crystal_ui::bitmap!(
     (# . . . #),
     (# . # . #),
     (. # . # .),
+    (. . . . .),
+);
+const CLOCK: [u8; 8] = liquid_crystal_ui::bitmap!(
+    (. . . . .),
+    (. . . . .),
+    (. # . # .),
+    (# . # . #),
+    (# . # . #),
+    (# . . . #),
+    (. # # # .),
     (. . . . .),
 );
 const BAT_1: [u8; 8] = liquid_crystal_ui::bitmap!(
@@ -100,6 +111,7 @@ async fn main(spawner: Spawner) -> ! {
     .unwrap();
 
     let smiley_ref = screen.register_custom_char(SMILEY).unwrap();
+    let clock_ref = screen.register_custom_char(CLOCK).unwrap();
     let bat_1_ref = screen.register_custom_char(BAT_1).unwrap();
     let bat_2_ref = screen.register_custom_char(BAT_2).unwrap();
 
@@ -107,7 +119,12 @@ async fn main(spawner: Spawner) -> ! {
     fn random_spot() -> liquid_crystal_ui::ScreenCoordinates {
         let rng = Rng::new();
         let rnd = rng.random();
-        ScreenCoordinates::at((rnd % 19) as u8, (rnd % 3) as u8)
+        ScreenCoordinates::at((rnd % 19) as u8, (rnd % 2) as u8 + 1)
+    }
+    macro_rules! nz {
+        ($x: expr) => {
+            NonZeroUsize::new($x).unwrap()
+        };
     }
 
     let hello_text = screen
@@ -118,14 +135,51 @@ async fn main(spawner: Spawner) -> ! {
         .unwrap();
 
     let _uptime_text = screen
-        .new_elem(WidgetContent::text("Uptime:").unwrap(), (0, 3), false)
+        .new_elem(WidgetContent::CustomCharacter(clock_ref), (0, 3), false)
         .unwrap();
     let uptime_widget = screen
-        .new_elem(WidgetContent::text("000").unwrap(), (7, 3), false)
+        .new_elem(WidgetContent::text("0s").unwrap(), (1, 3), false)
+        .unwrap();
+
+    let _scroll_demo_1 = screen
+        .new_elem(
+            WidgetContent::scroll_text(
+                "boioingnggg boioingnggg",
+                nz!(10),
+                ScrollSpeed::TPC(nz!(10)),
+                ScrollBehaviour::Bounce(5),
+            )
+            .unwrap(),
+            (0, 0),
+            false,
+        )
+        .unwrap();
+    let _scroll_demo_2 = screen
+        .new_elem(
+            WidgetContent::scroll_text(
+                "im lowk the most boring scrolling text of all",
+                nz!(10),
+                ScrollSpeed::TPC(nz!(20)),
+                ScrollBehaviour::Reset(5),
+            )
+            .unwrap(),
+            (9, 3),
+            false,
+        )
         .unwrap();
 
     let _bat_text = screen
-        .new_elem(WidgetContent::text("Bat").unwrap(), (15, 0), false)
+        .new_elem(
+            WidgetContent::scroll_text(
+                "Bat (Not real)  ",
+                nz!(5),
+                ScrollSpeed::TPC(nz!(15)),
+                ScrollBehaviour::Loop,
+            )
+            .unwrap(),
+            (13, 0),
+            false,
+        )
         .unwrap();
     let _bat_1 = screen
         .new_elem(WidgetContent::CustomCharacter(bat_1_ref), (18, 0), false)

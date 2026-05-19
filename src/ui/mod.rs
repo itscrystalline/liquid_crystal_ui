@@ -61,10 +61,10 @@ use crate::{
     storage::{QueueContainer, StackContainer, Storage, TextContainer},
     ui::{
         transition::Transition,
-        widget::{CustomCharacterRef, Widget, WidgetContent},
+        widget::{CustomCharacterRef, ScrollSpeed, ScrollingTextState, Widget, WidgetContent},
     },
 };
-use core::fmt::Debug;
+use core::{fmt::Debug, num::NonZeroUsize};
 // for some reason this needs to be here, even though .round() needs it
 #[allow(unused_imports)]
 use num_traits::float::FloatCore;
@@ -88,6 +88,7 @@ struct ScreenMetadata<const CHAR_HEIGHT: usize, S: Storage> {
     _back_widgets: S::Vec<IdWidget<S>>,
     _back_last_frame_drawn: S::Vec<ScreenCoordinates>,
     registered_custom_chars: S::Vec<(u32, [u8; CHAR_HEIGHT])>,
+    elapsed: usize,
 }
 impl<const CHAR_HEIGHT: usize, S: Storage> Default for ScreenMetadata<CHAR_HEIGHT, S> {
     fn default() -> Self {
@@ -97,6 +98,7 @@ impl<const CHAR_HEIGHT: usize, S: Storage> Default for ScreenMetadata<CHAR_HEIGH
             _back_widgets: Default::default(),
             _back_last_frame_drawn: Default::default(),
             registered_custom_chars: Default::default(),
+            elapsed: 0,
         }
     }
 }
@@ -198,6 +200,15 @@ impl<const CHAR_HEIGHT: usize, S: Storage> LcdScreenCore<CHAR_HEIGHT, S> {
         self.meta._back_widgets.extend(self.meta.widgets
             .drain_all()
             .filter_map(|(id, mut elem)| {
+                if let WidgetContent::ScrollingText { string, state, speed, .. } = &mut elem.content {
+                    let (speed, interval) = match speed {
+                        ScrollSpeed::CPT(non_zero) => (*non_zero, 1usize),
+                        ScrollSpeed::TPC(t) => (NonZeroUsize::new(1).unwrap(), usize::from(*t)),
+                    };
+                    if self.meta.elapsed.is_multiple_of(interval) {
+                        state.next(string.len(), speed);
+                    }
+                }
                 match elem.transitions.peek_mut() {
                     Some(Transition::Delete) => {
                         needs_update |= matches!(elem.content, WidgetContent::CustomCharacter(_));
@@ -269,6 +280,8 @@ impl<const CHAR_HEIGHT: usize, S: Storage> LcdScreenCore<CHAR_HEIGHT, S> {
         core::mem::swap(&mut self.meta._back_widgets, &mut self.meta.widgets);
         self.meta.widgets.minimize();
         self.meta._back_widgets.minimize();
+
+        self.meta.elapsed = self.meta.elapsed.wrapping_add(1);
 
         if needs_update {
             self.update_required_custom_chars();
@@ -488,6 +501,35 @@ impl<
                             error!("No custom character with ID {id}!")
                         }
                     }
+                    WidgetContent::ScrollingText {
+                        string, len, state, ..
+                    } => match state {
+                        ScrollingTextState::Reset { range, .. }
+                        | ScrollingTextState::Bounce { range, .. } => {
+                            let len = usize::from(*len);
+                            let iter = string.chars().skip(range.start).take(len);
+                            let in_frame = (D::WIDTH - elem.pos.x() as usize).min(len);
+                            self.lcd.write_str(&mut self.delay, iter.take(in_frame))?;
+                            self.core.meta._back_last_frame_drawn.extend(
+                                (elem.pos.x()..(elem.pos.x() + in_frame as u8))
+                                    .map(|x| ScreenCoordinates::at(x, elem.pos.y())),
+                            );
+                        }
+                        ScrollingTextState::Loop { main, wraparound } => {
+                            let len = usize::from(*len);
+                            let iter = string
+                                .chars()
+                                .skip(main.start)
+                                .take(main.len())
+                                .chain(string.chars().take(*wraparound));
+                            let in_frame = (D::WIDTH - elem.pos.x() as usize).min(len);
+                            self.lcd.write_str(&mut self.delay, iter.take(in_frame))?;
+                            self.core.meta._back_last_frame_drawn.extend(
+                                (elem.pos.x()..(elem.pos.x() + in_frame as u8))
+                                    .map(|x| ScreenCoordinates::at(x, elem.pos.y())),
+                            );
+                        }
+                    },
                 }
             }
         }
@@ -671,6 +713,39 @@ impl<
                             error!("No custom character with ID {id}!")
                         }
                     }
+                    WidgetContent::ScrollingText {
+                        string, len, state, ..
+                    } => match state {
+                        ScrollingTextState::Reset { range, .. }
+                        | ScrollingTextState::Bounce { range, .. } => {
+                            let len = usize::from(*len);
+                            let iter = string.chars().skip(range.start).take(len);
+                            let in_frame = (D::WIDTH - elem.pos.x() as usize).min(len);
+                            self.lcd
+                                .write_str(&mut self.delay, iter.take(in_frame))
+                                .await?;
+                            drawn_this_frame.extend(
+                                (elem.pos.x()..(elem.pos.x() + in_frame as u8))
+                                    .map(|x| ScreenCoordinates::at(x, elem.pos.y())),
+                            );
+                        }
+                        ScrollingTextState::Loop { main, wraparound } => {
+                            let len = usize::from(*len);
+                            let iter = string
+                                .chars()
+                                .skip(main.start)
+                                .take(main.len())
+                                .chain(string.chars().take(*wraparound));
+                            let in_frame = (D::WIDTH - elem.pos.x() as usize).min(len);
+                            self.lcd
+                                .write_str(&mut self.delay, iter.take(in_frame))
+                                .await?;
+                            drawn_this_frame.extend(
+                                (elem.pos.x()..(elem.pos.x() + in_frame as u8))
+                                    .map(|x| ScreenCoordinates::at(x, elem.pos.y())),
+                            );
+                        }
+                    },
                 }
             }
         }
