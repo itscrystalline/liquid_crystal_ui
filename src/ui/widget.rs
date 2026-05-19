@@ -97,6 +97,9 @@ impl ScrollingTextState {
                     }
                 } else {
                     *cd -= 1;
+                    if *cd == 0 {
+                        *range = 0..disp_len;
+                    }
                 }
             }
             ScrollingTextState::Loop { main, wraparound } => {
