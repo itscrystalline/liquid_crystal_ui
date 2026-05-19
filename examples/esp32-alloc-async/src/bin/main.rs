@@ -7,6 +7,7 @@
 )]
 #![deny(clippy::large_stack_frames)]
 
+use core::num::NonZeroUsize;
 use core::sync::atomic::{AtomicU32, Ordering};
 
 use alloc::format;
@@ -21,7 +22,7 @@ use liquid_crystal::{BusBits, LCD20X4, LiquidCrystal};
 use liquid_crystal_ui::ScreenCoordinates;
 use liquid_crystal_ui::ui::AsyncLcdScreen;
 use liquid_crystal_ui::ui::transition::Transition;
-use liquid_crystal_ui::ui::widget::WidgetContent;
+use liquid_crystal_ui::ui::widget::{ScrollBehaviour, ScrollSpeed, WidgetContent};
 use log::info;
 
 extern crate alloc;
@@ -107,7 +108,7 @@ async fn main(spawner: Spawner) -> ! {
     fn random_spot() -> liquid_crystal_ui::ScreenCoordinates {
         let rng = Rng::new();
         let rnd = rng.random();
-        ScreenCoordinates::at((rnd % 19) as u8, (rnd % 3) as u8)
+        ScreenCoordinates::at((rnd % 19) as u8, (rnd % 2) as u8 + 1)
     }
 
     let hello_text = screen
@@ -124,8 +125,23 @@ async fn main(spawner: Spawner) -> ! {
         .new_elem(WidgetContent::text("000").unwrap(), (7, 3), false)
         .unwrap();
 
+    macro_rules! nz {
+        ($x: expr) => {
+            NonZeroUsize::new($x).unwrap()
+        };
+    }
     let _bat_text = screen
-        .new_elem(WidgetContent::text("Bat").unwrap(), (15, 0), false)
+        .new_elem(
+            WidgetContent::scroll_text(
+                "Bat (Not real)  ",
+                nz!(5),
+                ScrollSpeed::TPC(nz!(15)),
+                ScrollBehaviour::Loop,
+            )
+            .unwrap(),
+            (13, 0),
+            false,
+        )
         .unwrap();
     let _bat_1 = screen
         .new_elem(WidgetContent::CustomCharacter(bat_1_ref), (18, 0), false)
