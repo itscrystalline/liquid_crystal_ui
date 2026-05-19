@@ -45,6 +45,22 @@ let hello_text = screen.new_elem(WidgetContent::text("Hello!")?, (0, 0),     fal
 //                                                                 (X, Y) (col, row)
 ```
 
+Scrolling text in place is also supported.
+
+```rust
+macro_rules! nz { ($x: expr) => { NonZeroUsize::new($x).unwrap() }; }
+let scroll = screen.new_elem(
+    WidgetContent::scroll_text(
+        "hi guys!",                 // full text
+        nz!(4),                     // how much to display on screen
+        ScrollSpeed::TPC(nz!(20)),  // scroll speed (ticks / character or characters / tick)
+        ScrollBehaviour::Bounce(5), // scroll type
+    )?,
+    (12, 2),
+    false,
+)?;
+```
+
 If the display supports custom characters, you can also register them:
 
 ```rust
