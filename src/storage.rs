@@ -39,13 +39,132 @@ pub trait TextContainer: StackContainer<u8> + Debug {
     /// Iterator for the ASCII characters in the string.
     fn chars(&self) -> impl Iterator<Item = u8>;
 
-    /// Converts an `&str` to a TextContainer.
+    /// Converts an `&str` to a TextContainer. If non ASCII characters are passed in, they will be
+    /// converted to the extended ASCII charset the display supports[^source]. If the character does
+    /// not have an equivalent extended ASCII character, it will be replaced with a '?'
+    ///
+    /// [^source]: [HD44780U data sheet](https://cdn.sparkfun.com/assets/9/5/f/7/b/HD44780.pdf)
     fn from_str(s: &str) -> Result<Self, StorageError> {
         let mut new = Self::new();
-        new.push_ascii_iter(s.bytes())?;
+        new.push_ascii_iter(s.chars().map(|c| char_to_ext_ascii_byte(c, b'?')))?;
+        Ok(new)
+    }
+    /// Similar to [`TextContainer::from_str`], but allows you to set a custom replacement character.
+    fn from_utf8_replace(s: &str, replacement: u8) -> Result<Self, StorageError> {
+        let mut new = Self::new();
+        new.push_ascii_iter(s.chars().map(|c| char_to_ext_ascii_byte(c, replacement)))?;
         Ok(new)
     }
 }
+
+fn char_to_ext_ascii_byte(ch: char, replacement: u8) -> u8 {
+    if ch.is_ascii() {
+        ch as u8
+    } else {
+        // https://cdn.sparkfun.com/assets/9/5/f/7/b/HD44780.pdf
+        // page 17 (japanese version), table 4
+        match ch {
+            '→' => 0b01111110,
+            '←' => 0b01111111,
+            '。' => 0b10100001,
+            '「' => 0b10100010,
+            '」' => 0b10100011,
+            '、' => 0b10100100,
+            '・' => 0b10100101,
+            'ヲ' => 0b10100110,
+            'ァ' => 0b10100111,
+            'ィ' => 0b10101000,
+            'ゥ' => 0b10101001,
+            'ェ' => 0b10101010,
+            'ォ' => 0b10101011,
+            'ャ' => 0b10101100,
+            'ュ' => 0b10101101,
+            'ョ' => 0b10101110,
+            'ッ' => 0b10101111,
+            'ー' => 0b10110000,
+            'ア' => 0b10110001,
+            'イ' => 0b10110010,
+            'ウ' => 0b10110011,
+            'エ' => 0b10110100,
+            'オ' => 0b10110101,
+            'カ' => 0b10110110,
+            'キ' => 0b10110111,
+            'ク' => 0b10111000,
+            'ケ' => 0b10111001,
+            'コ' => 0b10111010,
+            'サ' => 0b10111011,
+            'シ' => 0b10111100,
+            'ス' => 0b10111101,
+            'セ' => 0b10111110,
+            'ソ' => 0b10111111,
+            'タ' => 0b11000000,
+            'チ' => 0b11000001,
+            'ツ' => 0b11000010,
+            'テ' => 0b11000011,
+            'ト' => 0b11000100,
+            'ナ' => 0b11000101,
+            'ニ' => 0b11000110,
+            'ヌ' => 0b11000111,
+            'ネ' => 0b11001000,
+            'ノ' => 0b11001001,
+            'ハ' => 0b11001010,
+            'ヒ' => 0b11001011,
+            'フ' => 0b11001100,
+            'ヘ' => 0b11001101,
+            'ホ' => 0b11001110,
+            'マ' => 0b11001111,
+            'ミ' => 0b11010000,
+            'ム' => 0b11010001,
+            'メ' => 0b11010010,
+            'モ' => 0b11010011,
+            'ヤ' => 0b11010100,
+            'ユ' => 0b11010101,
+            'ヨ' => 0b11010110,
+            'ラ' => 0b11010111,
+            'リ' => 0b11011000,
+            'ル' => 0b11011001,
+            'レ' => 0b11011010,
+            'ロ' => 0b11011011,
+            'ワ' => 0b11011100,
+            'ン' => 0b11011101,
+            '゛' => 0b11011110,
+            '゜' => 0b11011111,
+            'α' => 0b11100000,
+            'ä' => 0b11100001,
+            'β' => 0b11100010,
+            'ε' => 0b11100011,
+            'μ' => 0b11100100,
+            'σ' => 0b11100101,
+            'ρ' => 0b11100110,
+            // 'g' => 0b11100111, // long g
+            '√' => 0b11101000,
+            // 'j' => 0b11101001, // long j
+            '※' => 0b11101010,
+            '¢' => 0b11101011,
+            'Ł' => 0b11101100,
+            'ñ' => 0b11101101,
+            'ö' => 0b11101110,
+            // 'p' => 0b11101111, // long p
+            // 'q' => 0b11110000, // long q
+            'θ' => 0b11110001,
+            '∞' => 0b11110010,
+            'Ω' => 0b11110011,
+            'ü' => 0b11110100,
+            'Σ' => 0b11110101,
+            'π' => 0b11110110,
+            // 'x' => 0b11110111, // x-bar, needs 2 chars
+            // 'y' => 0b11111000, // y with overline, also needs 2 chars
+            '千' => 0b11111001,
+            '万' => 0b11111010,
+            '円' => 0b11111011,
+            '÷' => 0b11111100,
+            '■' => 0b11111111, // filled block
+
+            _ => replacement,
+        }
+    }
+}
+
 /// Trait abstracting queues.
 pub trait QueueContainer<C>: IntoIterator<Item = C> + Sized + Default + Extend<C> {
     /// Creates an empty container.
